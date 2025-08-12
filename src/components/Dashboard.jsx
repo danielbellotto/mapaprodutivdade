@@ -30,6 +30,7 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
   const [userData, setUserData] = useState(null);
   const [allTasks, setAllTasks] = useState([]);
   const [isSupervisoryMode, setIsSupervisoryMode] = useState(false);
+  const [editingPriorityId, setEditingPriorityId] = useState(null); // NOVO ESTADO
 
   useEffect(() => {
     if (userRole === 'master' && viewingUserId && viewingUserId !== auth.currentUser.uid) {
@@ -83,7 +84,7 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
       return;
     }
 
-    const qTasks = query(collection(db, "tasks"), where("userId", "==", tasksQueryUserId));
+    const qTasks = query(collection(db, "tasks"), where("userId", "==", tasksQueryUserId), orderBy("orderIndex", "asc"));
     const unsubscribeTasks = onSnapshot(qTasks, (querySnapshot) => {
       const allFetchedTasks = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setAllTasks(allFetchedTasks); 
@@ -96,13 +97,7 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
         if (task.isDaily) {
           return taskDayOfWeek >= 1 && taskDayOfWeek <= 5;
         } else {
-          const taskDate = task.createdAt?.toDate();
-          const isCreatedOnCurrentDate = taskDate &&
-                                         taskDate.getDate() === currentDate.getDate() &&
-                                         taskDate.getMonth() === currentDate.getMonth() &&
-                                         taskDate.getFullYear() === currentDate.getFullYear();
-          const isRecurringOnSelectedDay = task.selectedDays?.includes(taskDayOfWeek);
-          return isCreatedOnCurrentDate || isRecurringOnSelectedDay;
+          return task.selectedDays?.includes(taskDayOfWeek);
         }
       });
       setTasks(dailyFilteredTasks);
@@ -189,7 +184,7 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
     setTaskToEdit(task);
     setShowEditTaskModal(true);
   };
-
+  
   const handleMoveTask = async (taskId, direction) => {
     const currentIndex = tasks.findIndex(task => task.id === taskId);
     if ((direction === 'up' && currentIndex === 0) || (direction === 'down' && currentIndex === tasks.length - 1)) {
@@ -198,29 +193,44 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
 
     const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
     
-    const newTasks = [...tasks];
-    const [movedTask] = newTasks.splice(currentIndex, 1);
-    newTasks.splice(newIndex, 0, movedTask);
-
-    setTasks(newTasks);
-
+    const taskToMove = tasks[currentIndex];
+    const taskToSwap = tasks[newIndex];
+    
     const batch = writeBatch(db);
-    newTasks.forEach((task, index) => {
-      const taskRef = doc(db, "tasks", task.id);
-      batch.update(taskRef, {
-        orderIndex: index
-      });
-    });
+    
+    const taskToMoveRef = doc(db, "tasks", taskToMove.id);
+    const taskToSwapRef = doc(db, "tasks", taskToSwap.id);
+
+    batch.update(taskToMoveRef, { orderIndex: taskToSwap.orderIndex });
+    batch.update(taskToSwapRef, { orderIndex: taskToMove.orderIndex });
 
     try {
       await batch.commit();
     } catch (error) {
       console.error("Erro ao reordenar tarefas:", error);
-      setTasks(tasks); // Em caso de erro, reverte para o estado original
-      alert("Erro ao salvar a nova ordem das tarefas.");
+      alert("Erro ao salvar a nova ordem das tarefas: " + error.message);
     }
   };
-  
+
+  // NOVA FUNÇÃO PARA ATUALIZAR A PRIORIDADE
+  const handleUpdatePriority = async (taskId, newPriority) => {
+    try {
+      const taskRef = doc(db, "tasks", taskId);
+      await updateDoc(taskRef, { priority: newPriority });
+      setEditingPriorityId(null); // Sai do modo de edição
+    } catch (error) {
+      console.error("Erro ao atualizar a prioridade:", error);
+      alert("Erro ao atualizar a prioridade: " + error.message);
+    }
+  };
+
+  const priorities = [
+    { value: 'importante-urgente', text: 'Importante e Urgente' },
+    { value: 'importante-nao-urgente', text: 'Importante mas Não Urgente' },
+    { value: 'urgente-nao-importante', text: 'Urgente mas Não Importante' },
+    { value: 'nao-urgente-nao-importante', text: 'Não Urgente e Não Importante' },
+  ];
+
   const formattedDate = currentDate.toLocaleDateString('pt-BR', {
     day: 'numeric',
     weekday: 'long',
@@ -472,8 +482,23 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
                         </td>
                         <td
                           className={`p-2 text-center text-white font-semibold text-xs align-middle ${getPriorityColor(task.priority)}`}
+                          onClick={() => setEditingPriorityId(task.id)}
                         >
-                          {getPriorityText(task.priority)}
+                            {editingPriorityId === task.id ? (
+                                <div className="absolute z-10 bg-white shadow-md rounded-lg p-2 flex flex-col space-y-1 w-48">
+                                    {priorities.map(p => (
+                                        <button
+                                            key={p.value}
+                                            onClick={() => handleUpdatePriority(task.id, p.value)}
+                                            className={`w-full text-center py-1 rounded-md text-sm font-semibold transition ${getPriorityColor(p.value)} text-white`}
+                                        >
+                                            {p.text}
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : (
+                                getPriorityText(task.priority)
+                            )}
                         </td>
                         <td className="p-2 text-center">
                           <p className={`text-lg ${task.completed ? 'line-through text-gray-500' : 'text-gray-800'}`}>
@@ -494,6 +519,7 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
                             onClick={() => handleMoveTask(task.id, 'up')}
                             disabled={index === 0}
                             className={`block p-1 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300 transition disabled:opacity-30 disabled:cursor-not-allowed`}
+                            title="Mover para cima"
                           >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
@@ -502,7 +528,8 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
                           <button
                             onClick={() => handleMoveTask(task.id, 'down')}
                             disabled={index === tasks.length - 1}
-                            className={`block p-1 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-700 transition disabled:opacity-30 disabled:cursor-not-allowed`}
+                            className={`block p-1 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300 transition disabled:opacity-30 disabled:cursor-not-allowed`}
+                            title="Mover para baixo"
                           >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />

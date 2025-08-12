@@ -11,6 +11,7 @@ export function EditTaskModal({ onClose, isVisible, categories, taskToEdit, view
   const [isContinuous, setIsContinuous] = useState(true);
   const [numWeeks, setNumWeeks] = useState(1);
   const [turno, setTurno] = useState('qualquer');
+  const [priority, setPriority] = useState('importante-urgente');
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -22,6 +23,7 @@ export function EditTaskModal({ onClose, isVisible, categories, taskToEdit, view
       setIsContinuous(taskToEdit.repeatType === 'continuous');
       setNumWeeks(taskToEdit.numWeeks || 1);
       setTurno(taskToEdit.turno || 'qualquer');
+      setPriority(taskToEdit.priority || 'importante-urgente'); // Adicionando a prioridade
     }
   }, [taskToEdit]);
 
@@ -66,6 +68,7 @@ export function EditTaskModal({ onClose, isVisible, categories, taskToEdit, view
         repeatType: isContinuous ? 'continuous' : 'by_weeks',
         numWeeks: isContinuous ? null : numWeeks,
         turno,
+        priority, // Salvando a prioridade
       });
       alert('Tarefa atualizada com sucesso!');
       onClose();
@@ -107,6 +110,29 @@ export function EditTaskModal({ onClose, isVisible, categories, taskToEdit, view
               <option key={cat.id} value={cat.name}>{cat.name}</option>
             ))}
           </select>
+        </div>
+
+        {/* Seção: Matriz de Eisenhower */}
+        <div className="mb-4">
+          <label className="block text-sm font-bold mb-2">Prioridade (Matriz de Eisenhower)</label>
+          <div className="grid grid-cols-2 gap-2 text-center">
+            <label className={`p-2 rounded-md transition cursor-pointer font-semibold text-sm ${priority === 'importante-urgente' ? 'bg-green-500 text-white' : 'bg-green-100 text-green-800'}`}>
+              <input type="radio" name="priority" value="importante-urgente" checked={priority === 'importante-urgente'} onChange={(e) => setPriority(e.target.value)} className="hidden" />
+              Importante e Urgente
+            </label>
+            <label className={`p-2 rounded-md transition cursor-pointer font-semibold text-sm ${priority === 'importante-nao-urgente' ? 'bg-orange-500 text-white' : 'bg-orange-100 text-orange-800'}`}>
+              <input type="radio" name="priority" value="importante-nao-urgente" checked={priority === 'importante-nao-urgente'} onChange={(e) => setPriority(e.target.value)} className="hidden" />
+              Importante mas Não Urgente
+            </label>
+            <label className={`p-2 rounded-md transition cursor-pointer font-semibold text-sm ${priority === 'urgente-nao-importante' ? 'bg-blue-500 text-white' : 'bg-blue-100 text-blue-800'}`}>
+              <input type="radio" name="priority" value="urgente-nao-importante" checked={priority === 'urgente-nao-importante'} onChange={(e) => setPriority(e.target.value)} className="hidden" />
+              Urgente mas Não Importante
+            </label>
+            <label className={`p-2 rounded-md transition cursor-pointer font-semibold text-sm ${priority === 'nao-urgente-nao-importante' ? 'bg-red-500 text-white' : 'bg-red-100 text-red-800'}`}>
+              <input type="radio" name="priority" value="nao-urgente-nao-importante" checked={priority === 'nao-urgente-nao-importante'} onChange={(e) => setPriority(e.target.value)} className="hidden" />
+              Não Urgente e Não Importante
+            </label>
+          </div>
         </div>
 
         <div className="mb-4">
@@ -242,7 +268,7 @@ export function EditTaskModal({ onClose, isVisible, categories, taskToEdit, view
             disabled={isSaving}
             className={`px-4 py-2 text-white font-semibold rounded-md shadow-md transition ${isSaving ? 'bg-green-300' : 'bg-green-500 hover:bg-green-600'}`}
           >
-            {isSaving ? 'Salvando...' : 'Salvar'}
+            {isSaving ? 'Salvando...' : 'Salvar Tarefa'}
           </button>
         </div>
       </form>
