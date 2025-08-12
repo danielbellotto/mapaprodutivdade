@@ -30,7 +30,7 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
   const [userData, setUserData] = useState(null);
   const [allTasks, setAllTasks] = useState([]);
   const [isSupervisoryMode, setIsSupervisoryMode] = useState(false);
-  const [editingPriorityId, setEditingPriorityId] = useState(null); // NOVO ESTADO
+  const [editingPriorityId, setEditingPriorityId] = useState(null);
 
   useEffect(() => {
     if (userRole === 'master' && viewingUserId && viewingUserId !== auth.currentUser.uid) {
@@ -212,12 +212,11 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
     }
   };
 
-  // NOVA FUNÇÃO PARA ATUALIZAR A PRIORIDADE
   const handleUpdatePriority = async (taskId, newPriority) => {
     try {
       const taskRef = doc(db, "tasks", taskId);
       await updateDoc(taskRef, { priority: newPriority });
-      setEditingPriorityId(null); // Sai do modo de edição
+      setEditingPriorityId(null);
     } catch (error) {
       console.error("Erro ao atualizar a prioridade:", error);
       alert("Erro ao atualizar a prioridade: " + error.message);
@@ -584,6 +583,10 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
           viewingUserId={viewingUserId}
         />
       )}
+
+      <footer className="w-full text-center p-4 text-gray-500 text-sm mt-8">
+        Criação e Desenvolvimento por Daniel Bellotto e Gemini
+      </footer>
     </div>
   );
 }
