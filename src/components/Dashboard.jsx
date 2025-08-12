@@ -24,8 +24,8 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
   const [taskToEdit, setTaskToEdit] = useState(null);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [tasks, setTasks] = useState([]);
-  const [pendingTasks, setPendingTasks] = useState([]); // NOVO ESTADO
-  const [completedTasks, setCompletedTasks] = useState([]); // NOVO ESTADO
+  const [pendingTasks, setPendingTasks] = useState([]);
+  const [completedTasks, setCompletedTasks] = useState([]);
   const [weeklyTasks, setWeeklyTasks] = useState([]);
   const [monthlyTasks, setMonthlyTasks] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -87,14 +87,22 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
       return;
     }
 
-    const qTasks = query(collection(db, "tasks"), where("userId", "==", tasksQueryUserId), orderBy("orderIndex", "asc"));
+    // QUERY REVISADA: Busca TODAS as tarefas, incluindo as arquivadas
+    const qTasks = query(
+      collection(db, "tasks"),
+      where("userId", "==", tasksQueryUserId),
+      orderBy("orderIndex", "asc")
+    );
     const unsubscribeTasks = onSnapshot(qTasks, (querySnapshot) => {
       const allFetchedTasks = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setAllTasks(allFetchedTasks); 
 
+      // FILTRAGEM AGORA É FEITA NO FRONT-END, GARANTINDO QUE AS TAREFAS ARQUIVADAS NÃO APAREÇAM
+      const activeTasks = allFetchedTasks.filter(task => !task.isArchived);
+
       const currentDayOfWeek = currentDate.getDay(); // 0 (Domingo) a 6 (Sábado)
 
-      const dailyFilteredTasks = allFetchedTasks.filter(task => {
+      const dailyFilteredTasks = activeTasks.filter(task => {
         const taskDayOfWeek = currentDate.getDay();
         
         if (task.isDaily) {
@@ -108,7 +116,7 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
       const firstDayOfWeek = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate() - currentDate.getDay());
       const lastDayOfWeek = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate() - currentDate.getDay() + 6);
       
-      const weeklyFilteredTasks = allFetchedTasks.filter(task => {
+      const weeklyFilteredTasks = activeTasks.filter(task => {
         const taskDate = task.createdAt?.toDate();
         if (!taskDate) return false;
         
@@ -127,7 +135,7 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
       const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
       const lastDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
 
-      const monthlyFilteredTasks = allFetchedTasks.filter(task => {
+      const monthlyFilteredTasks = activeTasks.filter(task => {
         const taskDate = task.createdAt?.toDate();
         if (!taskDate) return false;
         return taskDate >= firstDayOfMonth && taskDate <= lastDayOfMonth;
@@ -147,7 +155,8 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
             });
             setDailyCompletions(completionsMap);
 
-            const dailyTasksToFilter = allTasks.filter(task => {
+            const activeTasks = allTasks.filter(task => !task.isArchived);
+            const dailyTasksToFilter = activeTasks.filter(task => {
               const taskDayOfWeek = currentDate.getDay();
               if (task.isDaily) {
                 return taskDayOfWeek >= 1 && taskDayOfWeek <= 5;
@@ -616,7 +625,7 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
                       <tr key={task.id} className="border-b hover:bg-gray-50">
                         <td
                           className="p-2 font-semibold text-xs text-white text-center align-middle bg-gray-400"
-                          style={{ backgroundColor: 'rgb(156 163 175)' }} // Cor neutra para concluídas
+                          style={{ backgroundColor: 'rgb(156 163 175)' }}
                         >
                           {task.category}
                         </td>

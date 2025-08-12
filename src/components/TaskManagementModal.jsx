@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../utils/firebase';
-import { collection, query, onSnapshot, orderBy, doc, deleteDoc, where } from 'firebase/firestore';
+import { collection, query, onSnapshot, orderBy, doc, deleteDoc, updateDoc, where } from 'firebase/firestore';
 import { ModalWrapper } from './ModalWrapper';
 
 export function TaskManagementModal({ onClose, isVisible, onOpenEditTask, viewingUserId }) {
@@ -15,18 +15,25 @@ export function TaskManagementModal({ onClose, isVisible, onOpenEditTask, viewin
       return;
     }
     
-    // A query para buscar as tarefas
-    const q = query(collection(db, "tasks"), where("userId", "==", tasksQueryUserId), orderBy("createdAt"));
+    // CORREÇÃO: A query agora lista apenas as tarefas ativas ou que não têm o campo isArchived
+    const q = query(
+      collection(db, "tasks"), 
+      where("userId", "==", tasksQueryUserId), 
+      orderBy("createdAt")
+    );
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const tasksArray = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setTasks(tasksArray);
+      // Filtragem no front-end para incluir apenas tarefas não arquivadas
+      const activeTasks = querySnapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(task => !task.isArchived); // Filtra por tasks que não têm 'isArchived: true'
+
+      setTasks(activeTasks);
       setLoading(false);
     });
 
     return () => unsubscribe();
   }, [viewingUserId]);
 
-  // Lógica para agrupar as tarefas por categoria
   const groupedTasks = tasks.reduce((acc, task) => {
     const category = task.category || 'Sem Categoria';
     if (!acc[category]) {
@@ -37,14 +44,14 @@ export function TaskManagementModal({ onClose, isVisible, onOpenEditTask, viewin
   }, {});
 
   const handleDeleteTask = async (taskId) => {
-    if (window.confirm("Tem certeza que deseja excluir esta tarefa?")) {
+    if (window.confirm("Tem certeza que deseja ARQUIVAR esta tarefa? Ela não aparecerá mais nas suas listas ativas.")) {
       setIsDeleting(true);
       try {
-        await deleteDoc(doc(db, "tasks", taskId));
-        console.log("Tarefa excluída com sucesso!");
+        await updateDoc(doc(db, "tasks", taskId), { isArchived: true });
+        console.log("Tarefa arquivada com sucesso!");
       } catch (error) {
-        console.error("Erro ao excluir tarefa:", error);
-        alert("Erro ao excluir tarefa: " + error.message);
+        console.error("Erro ao arquivar tarefa:", error);
+        alert("Erro ao arquivar tarefa: " + error.message);
       } finally {
         setIsDeleting(false);
       }
@@ -52,19 +59,19 @@ export function TaskManagementModal({ onClose, isVisible, onOpenEditTask, viewin
   };
 
   const handleDeleteAllTasks = async () => {
-    const confirmationMessage = "ATENÇÃO: Esta ação irá excluir TODAS as tarefas de forma permanente e não será possível recuperá-las. Tem certeza que deseja continuar?";
+    const confirmationMessage = "ATENÇÃO: Esta ação irá ARQUIVAR TODAS as tarefas ativas de forma permanente e não será possível recuperá-las.";
     
     if (window.confirm(confirmationMessage)) {
       setIsDeleting(true);
       try {
-        const deletePromises = tasks.map(task => deleteDoc(doc(db, "tasks", task.id)));
-        await Promise.all(deletePromises);
+        const updatePromises = tasks.map(task => updateDoc(doc(db, "tasks", task.id), { isArchived: true }));
+        await Promise.all(updatePromises);
         
-        console.log("Todas as tarefas foram excluídas com sucesso!");
+        console.log("Todas as tarefas ativas foram arquivadas com sucesso!");
         onClose();
       } catch (error) {
-        console.error("Erro ao excluir todas as tarefas:", error);
-        alert("Erro ao excluir todas as tarefas: " + error.message);
+        console.error("Erro ao arquivar todas as tarefas:", error);
+        alert("Erro ao arquivar todas as tarefas: " + error.message);
       } finally {
         setIsDeleting(false);
       }
@@ -76,7 +83,6 @@ export function TaskManagementModal({ onClose, isVisible, onOpenEditTask, viewin
       {loading ? (
         <p className="text-center text-gray-500">Carregando tarefas...</p>
       ) : (
-        // Renderização agrupada por categoria
         <div className="max-h-96 overflow-y-auto divide-y divide-gray-200 pr-2">
           {Object.keys(groupedTasks).length > 0 ? (
             Object.keys(groupedTasks).map((categoryName) => (
@@ -98,7 +104,7 @@ export function TaskManagementModal({ onClose, isVisible, onOpenEditTask, viewin
                           disabled={isDeleting}
                           className="text-sm text-red-600 hover:text-red-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          Excluir
+                          Arquivar
                         </button>
                       </div>
                     </li>
@@ -118,7 +124,7 @@ export function TaskManagementModal({ onClose, isVisible, onOpenEditTask, viewin
           disabled={isDeleting}
           className="px-4 py-2 bg-red-600 text-white font-semibold rounded-md shadow-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {isDeleting ? 'Excluindo...' : 'Excluir Todas as Tarefas'}
+          {isDeleting ? 'Arquivando...' : 'Arquivar Todas as Tarefas'}
         </button>
       </div>
     </ModalWrapper>
