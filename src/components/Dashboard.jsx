@@ -9,7 +9,7 @@ import { ReportModal } from './ReportModal';
 import { DailyReportModal } from './DailyReportModal';
 import { EditUserModal } from './EditUserModal';
 import { EditTaskModal } from './EditTaskModal';
-import { collection, query, onSnapshot, orderBy, doc, updateDoc, getDoc, where, writeBatch } from 'firebase/firestore';
+import { collection, query, onSnapshot, orderBy, doc, updateDoc, getDoc, where, writeBatch, setDoc, deleteDoc } from 'firebase/firestore';
 
 export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUserId, viewingUserName }) {
   const [showTaskModal, setShowTaskModal] = useState(false);
@@ -24,6 +24,8 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
   const [taskToEdit, setTaskToEdit] = useState(null);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [tasks, setTasks] = useState([]);
+  const [pendingTasks, setPendingTasks] = useState([]); // NOVO ESTADO
+  const [completedTasks, setCompletedTasks] = useState([]); // NOVO ESTADO
   const [weeklyTasks, setWeeklyTasks] = useState([]);
   const [monthlyTasks, setMonthlyTasks] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -31,6 +33,7 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
   const [allTasks, setAllTasks] = useState([]);
   const [isSupervisoryMode, setIsSupervisoryMode] = useState(false);
   const [editingPriorityId, setEditingPriorityId] = useState(null);
+  const [dailyCompletions, setDailyCompletions] = useState({});
 
   useEffect(() => {
     if (userRole === 'master' && viewingUserId && viewingUserId !== auth.currentUser.uid) {
@@ -132,11 +135,42 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
       setMonthlyTasks(monthlyFilteredTasks);
     });
 
+    const formattedDateForFetch = currentDate.toISOString().slice(0, 10);
+    const completionsQueryUserId = viewingUserId || auth.currentUser?.uid;
+    if (completionsQueryUserId) {
+        const qCompletions = query(collection(db, "dailyCompletions"), where("userId", "==", completionsQueryUserId), where("completionDate", "==", formattedDateForFetch));
+        const unsubscribeCompletions = onSnapshot(qCompletions, (querySnapshot) => {
+            const completionsMap = {};
+            querySnapshot.docs.forEach(doc => {
+                const completionData = doc.data();
+                completionsMap[completionData.taskId] = true;
+            });
+            setDailyCompletions(completionsMap);
+
+            const dailyTasksToFilter = allTasks.filter(task => {
+              const taskDayOfWeek = currentDate.getDay();
+              if (task.isDaily) {
+                return taskDayOfWeek >= 1 && taskDayOfWeek <= 5;
+              } else {
+                return task.selectedDays?.includes(taskDayOfWeek);
+              }
+            });
+            
+            setPendingTasks(dailyTasksToFilter.filter(task => !completionsMap[task.id]));
+            setCompletedTasks(dailyTasksToFilter.filter(task => completionsMap[task.id]));
+        });
+        return () => {
+            unsubscribeCompletions();
+            unsubscribeTasks();
+            unsubscribeCategories();
+        };
+    }
+
     return () => {
       unsubscribeCategories();
       unsubscribeTasks();
     };
-  }, [currentDate, viewingUserId]);
+  }, [currentDate, viewingUserId, allTasks]);
 
   const handlePreviousDay = () => {
     const newDate = new Date(currentDate);
@@ -162,15 +196,25 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
     setCurrentDate(newDate);
   };
   
-  const handleToggleTaskCompletion = async (taskId, currentStatus) => {
+  const handleToggleTaskCompletion = async (taskId) => {
+    const isCompleted = dailyCompletions[taskId];
+    const formattedDate = currentDate.toISOString().slice(0, 10);
+    const docId = `${taskId}-${formattedDate}`;
+    const taskCompletionRef = doc(db, "dailyCompletions", docId);
+    
     try {
-      const taskRef = doc(db, "tasks", taskId);
-      await updateDoc(taskRef, {
-        completed: !currentStatus
-      });
+      if (isCompleted) {
+        await deleteDoc(taskCompletionRef);
+      } else {
+        await setDoc(taskCompletionRef, {
+          taskId,
+          userId: viewingUserId || auth.currentUser.uid,
+          completionDate: formattedDate,
+        });
+      }
     } catch (error) {
-      console.error("Erro ao atualizar a tarefa:", error);
-      alert("Erro ao atualizar a tarefa: " + error.message);
+      console.error("Erro ao atualizar o status da tarefa:", error);
+      alert("Erro ao atualizar o status da tarefa: " + error.message);
     }
   };
 
@@ -186,15 +230,16 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
   };
   
   const handleMoveTask = async (taskId, direction) => {
-    const currentIndex = tasks.findIndex(task => task.id === taskId);
-    if ((direction === 'up' && currentIndex === 0) || (direction === 'down' && currentIndex === tasks.length - 1)) {
+    const taskToMoveList = pendingTasks.find(t => t.id === taskId) ? pendingTasks : completedTasks;
+    const currentIndex = taskToMoveList.findIndex(task => task.id === taskId);
+    if ((direction === 'up' && currentIndex === 0) || (direction === 'down' && currentIndex === taskToMoveList.length - 1)) {
       return;
     }
 
     const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
     
-    const taskToMove = tasks[currentIndex];
-    const taskToSwap = tasks[newIndex];
+    const taskToMove = taskToMoveList[currentIndex];
+    const taskToSwap = taskToMoveList[newIndex];
     
     const batch = writeBatch(db);
     
@@ -240,7 +285,8 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
     year: 'numeric'
   }).replace(/^\w/, (c) => c.toUpperCase());
 
-  const dailyProgress = tasks.length > 0 ? (tasks.filter(t => t.completed).length / tasks.length) * 100 : 0;
+  const totalDailyTasks = pendingTasks.length + completedTasks.length;
+  const dailyProgress = totalDailyTasks > 0 ? (completedTasks.length / totalDailyTasks) * 100 : 0;
   const weeklyProgress = weeklyTasks.length > 0 ? (weeklyTasks.filter(t => t.completed).length / weeklyTasks.length) * 100 : 0;
   const monthlyProgress = monthlyTasks.length > 0 ? (monthlyTasks.filter(t => t.completed).length / monthlyTasks.length) * 100 : 0;
   
@@ -360,7 +406,7 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
                 </div>
               </div>
               <p className="text-gray-600">
-                {tasks.filter(t => t.completed).length} de {tasks.length} tarefas concluídas
+                {completedTasks.length} de {(pendingTasks.length + completedTasks.length)} tarefas concluídas
               </p>
             </div>
             
@@ -452,8 +498,9 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
             </div>
           </div>
 
-          {/* Tabela de Tarefas */}
-          <div className="bg-white p-4 rounded-xl shadow-md">
+          {/* Tabela de Tarefas Pendentes */}
+          <div className="bg-white p-4 rounded-xl shadow-md mb-6">
+            <h3 className="text-xl font-bold text-gray-800 mb-4">Tarefas Pendentes ({pendingTasks.length})</h3>
             <table className="min-w-full">
               <thead>
                 <tr>
@@ -465,8 +512,8 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
                 </tr>
               </thead>
               <tbody>
-                {tasks.length > 0 ? (
-                  tasks.map((task, index) => {
+                {pendingTasks.length > 0 ? (
+                  pendingTasks.map((task, index) => {
                     const categoryData = categories.find(cat => cat.name === task.category);
                     const categoryColor = categoryData?.color || '#D1D5DB';
                     const isButtonDisabled = !canMarkTask(task);
@@ -500,17 +547,17 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
                             )}
                         </td>
                         <td className="p-2 text-center">
-                          <p className={`text-lg ${task.completed ? 'line-through text-gray-500' : 'text-gray-800'}`}>
+                          <p className={`text-lg text-gray-800`}>
                             {task.taskName}
                           </p>
                         </td>
                         <td className="p-2 text-right">
                           <button
-                            onClick={() => handleToggleTaskCompletion(task.id, task.completed)}
+                            onClick={() => handleToggleTaskCompletion(task.id)}
                             disabled={isButtonDisabled}
-                            className={`px-3 py-1 rounded-full text-white font-semibold text-xs ${task.completed ? 'bg-green-500 hover:bg-green-600' : 'bg-gray-400 hover:bg-gray-500'} ${isButtonDisabled && 'opacity-50 cursor-not-allowed'}`}
+                            className={`px-3 py-1 rounded-full text-white font-semibold text-xs bg-gray-400 hover:bg-gray-500 ${isButtonDisabled && 'opacity-50 cursor-not-allowed'}`}
                           >
-                            {task.completed ? 'Concluída' : 'Marcar'}
+                            Marcar
                           </button>
                         </td>
                         <td className="p-2 text-center space-y-1">
@@ -526,7 +573,7 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
                           </button>
                           <button
                             onClick={() => handleMoveTask(task.id, 'down')}
-                            disabled={index === tasks.length - 1}
+                            disabled={index === pendingTasks.length - 1}
                             className={`block p-1 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300 transition disabled:opacity-30 disabled:cursor-not-allowed`}
                             title="Mover para baixo"
                           >
@@ -540,7 +587,64 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
                   })
                 ) : (
                   <tr>
-                    <td colSpan="5" className="text-center p-4 text-gray-500">Nenhuma tarefa encontrada para este dia.</td>
+                    <td colSpan="5" className="text-center p-4 text-gray-500">Nenhuma tarefa pendente para este dia.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Tabela de Tarefas Concluídas */}
+          <div className="bg-white p-4 rounded-xl shadow-md">
+            <h3 className="text-xl font-bold text-gray-800 mb-4">Tarefas Concluídas ({completedTasks.length})</h3>
+            <table className="min-w-full">
+              <thead>
+                <tr>
+                  <th className="sticky-header sticky-left bg-white text-left p-2 w-32">CATEGORIA</th>
+                  <th className="sticky-header bg-white text-left p-2 w-48">PRIORIDADE</th>
+                  <th className="sticky-header bg-white text-center p-2">TAREFA</th>
+                  <th className="sticky-header bg-white text-right p-2 w-24">AÇÃO</th>
+                </tr>
+              </thead>
+              <tbody>
+                {completedTasks.length > 0 ? (
+                  completedTasks.map((task) => {
+                    const categoryData = categories.find(cat => cat.name === task.category);
+                    const categoryColor = categoryData?.color || '#D1D5DB';
+
+                    return (
+                      <tr key={task.id} className="border-b hover:bg-gray-50">
+                        <td
+                          className="p-2 font-semibold text-xs text-white text-center align-middle bg-gray-400"
+                          style={{ backgroundColor: 'rgb(156 163 175)' }} // Cor neutra para concluídas
+                        >
+                          {task.category}
+                        </td>
+                        <td
+                          className={`p-2 text-center text-white font-semibold text-xs align-middle bg-gray-400`}
+                          style={{ backgroundColor: 'rgb(156 163 175)' }}
+                        >
+                          {getPriorityText(task.priority)}
+                        </td>
+                        <td className="p-2 text-center text-gray-500">
+                          <p className={`text-lg line-through`}>
+                            {task.taskName}
+                          </p>
+                        </td>
+                        <td className="p-2 text-right">
+                          <button
+                            onClick={() => handleToggleTaskCompletion(task.id)}
+                            className={`px-3 py-1 rounded-full text-white font-semibold text-xs bg-green-500 hover:bg-green-600`}
+                          >
+                            Reverter
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan="4" className="text-center p-4 text-gray-500">Nenhuma tarefa concluída para este dia.</td>
                   </tr>
                 )}
               </tbody>
