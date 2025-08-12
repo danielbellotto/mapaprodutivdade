@@ -15,6 +15,7 @@ export function TaskManagementModal({ onClose, isVisible, onOpenEditTask, viewin
       return;
     }
     
+    // A query para buscar as tarefas
     const q = query(collection(db, "tasks"), where("userId", "==", tasksQueryUserId), orderBy("createdAt"));
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const tasksArray = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -25,6 +26,7 @@ export function TaskManagementModal({ onClose, isVisible, onOpenEditTask, viewin
     return () => unsubscribe();
   }, [viewingUserId]);
 
+  // Lógica para agrupar as tarefas por categoria
   const groupedTasks = tasks.reduce((acc, task) => {
     const category = task.category || 'Sem Categoria';
     if (!acc[category]) {
@@ -74,6 +76,7 @@ export function TaskManagementModal({ onClose, isVisible, onOpenEditTask, viewin
       {loading ? (
         <p className="text-center text-gray-500">Carregando tarefas...</p>
       ) : (
+        // Renderização agrupada por categoria
         <div className="max-h-96 overflow-y-auto divide-y divide-gray-200 pr-2">
           {Object.keys(groupedTasks).length > 0 ? (
             Object.keys(groupedTasks).map((categoryName) => (
