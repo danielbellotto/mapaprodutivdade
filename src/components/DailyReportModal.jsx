@@ -1,86 +1,178 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { db } from '../utils/firebase';
+import { collection, query, onSnapshot, where } from 'firebase/firestore';
+import { ModalWrapper } from './ModalWrapper';
 
-export function DailyReportModal({ isVisible, onClose, allTasks, date, categories }) {
-  if (!isVisible) return null;
+export function DailyReportModal({ onClose, isVisible, allTasks, date, categories, viewingUserId }) {
+    const [tasksForDate, setTasksForDate] = useState([]);
+    const [dailyCompletionsData, setDailyCompletionsData] = useState({});
 
-  const currentDayOfWeek = date.getDay();
-  const tasksForDay = allTasks.filter(task => {
-    const taskDate = task.createdAt?.toDate();
-    if (!taskDate) return false;
+    useEffect(() => {
+        if (!date || !isVisible || !viewingUserId) return;
 
-    // Lógica para tarefas diárias e recorrentes
-    const isCreatedOnDay = taskDate.getDate() === date.getDate() &&
-                           taskDate.getMonth() === date.getMonth() &&
-                           taskDate.getFullYear() === date.getFullYear();
+        const formattedDate = date.toISOString().slice(0, 10);
+
+        const tasksOnDate = allTasks.filter(task => {
+            const currentDayOfWeek = date.getDay();
+            
+            if (task.isDaily) {
+                return currentDayOfWeek >= 1 && currentDayOfWeek <= 5;
+            } else {
+                return task.selectedDays?.includes(currentDayOfWeek);
+            }
+        });
+        
+        setTasksForDate(tasksOnDate);
+
+        // NOVA LÓGICA: Busca as conclusões do dia para pegar o timestamp
+        const qCompletions = query(
+            collection(db, "dailyCompletions"), 
+            where("userId", "==", viewingUserId),
+            where("completionDate", "==", formattedDate)
+        );
+        
+        const unsubscribeCompletions = onSnapshot(qCompletions, (querySnapshot) => {
+            const completionsMap = {};
+            querySnapshot.docs.forEach(doc => {
+                const completionData = doc.data();
+                completionsMap[completionData.taskId] = completionData;
+            });
+            setDailyCompletionsData(completionsMap);
+        });
+
+        return () => unsubscribeCompletions();
+
+    }, [date, isVisible, allTasks, viewingUserId]);
+
+    const completedTasks = tasksForDate.filter(task => dailyCompletionsData[task.id]);
+    const pendingTasks = tasksForDate.filter(task => !dailyCompletionsData[task.id]);
     
-    const isRecurringOnDay = !task.isDaily && task.selectedDays?.includes(currentDayOfWeek);
+    const getCategoryColor = (categoryName) => {
+      const category = categories.find(cat => cat.name === categoryName);
+      return category?.color || '#D1D5DB';
+    };
+
+    const getPriorityText = (priority) => {
+      switch(priority) {
+        case 'importante-urgente': return 'Importante e Urgente';
+        case 'importante-nao-urgente': return 'Importante mas Não Urgente';
+        case 'urgente-nao-importante': return 'Urgente mas Não Importante';
+        case 'nao-urgente-nao-importante': return 'Não Urgente e Não Importante';
+        default: return 'Sem Prioridade';
+      }
+    };
     
-    return isCreatedOnDay || isRecurringOnDay;
-  });
+    const formattedDate = date ? date.toLocaleDateString('pt-BR', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      weekday: 'long',
+    }).replace(/\./g, '') : '';
 
-  // Agrupar tarefas por categoria para exibição
-  const tasksByCategory = tasksForDay.reduce((acc, task) => {
-    const categoryName = task.category || 'Sem Categoria';
-    if (!acc[categoryName]) {
-      acc[categoryName] = [];
-    }
-    acc[categoryName].push(task);
-    return acc;
-  }, {});
+    return (
+        <ModalWrapper onClose={onClose} isVisible={isVisible} title={`Relatório Diário - ${formattedDate}`} size="lg">
+            {tasksForDate.length === 0 ? (
+                <p className="text-center text-gray-500 p-4">Nenhuma tarefa encontrada para este dia.</p>
+            ) : (
+                <div className="space-y-6">
+                    {/* Tabela de Tarefas Concluídas */}
+                    <div>
+                        <h4 className="font-bold text-gray-700 mb-2">Tarefas Concluídas ({completedTasks.length})</h4>
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Tarefa
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Prioridade
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Categoria
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Concluída em
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {completedTasks.map(task => {
+                                        const categoryColor = getCategoryColor(task.category);
+                                        const completionTime = dailyCompletionsData[task.id]?.completionTimestamp?.toDate();
 
-  const formattedDate = date.toLocaleDateString('pt-BR', {
-    day: 'numeric',
-    month: 'long',
-  });
+                                        return (
+                                            <tr key={task.id}>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                                    {task.taskName}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full text-white ${getPriorityColor(task.priority)}`}>
+                                                        {getPriorityText(task.priority)}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full text-white`} style={{backgroundColor: categoryColor}}>
+                                                      {task.category}
+                                                  </span>
+                                                </td>
+                                                {/* NOVO CAMPO: Exibe o horário de conclusão */}
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    {completionTime ? completionTime.toLocaleTimeString('pt-BR') : 'N/A'}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
 
-  // Função para encontrar a cor da categoria
-  const getCategoryColor = (categoryName) => {
-    const category = categories.find(cat => cat.name === categoryName);
-    return category?.color || '#D1D5DB';
-  };
-
-  return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex justify-center items-center font-inter z-50">
-      <div className="relative bg-white p-6 rounded-lg shadow-xl max-w-xl w-full m-4">
-        <h2 className="text-2xl font-bold mb-4 text-center">Relatório Diário - {formattedDate}</h2>
-
-        {Object.keys(tasksByCategory).length > 0 ? (
-          <div className="space-y-6 max-h-96 overflow-y-auto pr-2">
-            {Object.keys(tasksByCategory).map(categoryName => (
-              <div key={categoryName} className="p-4 rounded-xl shadow-md" style={{ backgroundColor: getCategoryColor(categoryName) + '40' }}>
-                <h3 className="text-xl font-semibold mb-3 text-gray-800">{categoryName}</h3>
-                <ul className="space-y-2">
-                  {tasksByCategory[categoryName].map(task => (
-                    <li key={task.id} className="flex items-center space-x-2 text-gray-800">
-                      {task.completed ? (
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      ) : (
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      )}
-                      <span className={`text-md ${task.completed ? 'line-through text-gray-500' : ''}`}>{task.taskName}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="text-center text-gray-500">Nenhuma tarefa encontrada para este dia.</div>
-        )}
-
-        <div className="mt-6 flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-gray-200 text-gray-800 font-semibold rounded-md shadow-md hover:bg-gray-300 transition"
-          >
-            Fechar
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+                    {/* Tabela de Tarefas Pendentes */}
+                    <div>
+                        <h4 className="font-bold text-gray-700 mb-2">Tarefas Pendentes ({pendingTasks.length})</h4>
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Tarefa
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Prioridade
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Categoria
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {pendingTasks.map(task => {
+                                        const categoryColor = getCategoryColor(task.category);
+                                        return (
+                                            <tr key={task.id}>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                                    {task.taskName}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full text-white ${getPriorityColor(task.priority)}`}>
+                                                        {getPriorityText(task.priority)}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full text-white`} style={{backgroundColor: categoryColor}}>
+                                                      {task.category}
+                                                  </span>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </ModalWrapper>
+    );
 }

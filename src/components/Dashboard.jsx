@@ -9,7 +9,7 @@ import { ReportModal } from './ReportModal';
 import { DailyReportModal } from './DailyReportModal';
 import { EditUserModal } from './EditUserModal';
 import { EditTaskModal } from './EditTaskModal';
-import { collection, query, onSnapshot, orderBy, doc, updateDoc, getDoc, where, writeBatch, setDoc, deleteDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, orderBy, doc, updateDoc, getDoc, where, writeBatch, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 
 export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUserId, viewingUserName }) {
   const [showTaskModal, setShowTaskModal] = useState(false);
@@ -79,9 +79,14 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
       setCategories(categoriesArray);
     });
 
-    const tasksQueryUserId = viewingUserId || auth.currentUser?.uid;
+    return () => unsubscribeCategories();
+  }, [viewingUserId]);
 
+  // NOVO useEffect para buscar todas as tarefas
+  useEffect(() => {
+    const tasksQueryUserId = viewingUserId || auth.currentUser?.uid;
     if (!tasksQueryUserId) {
+      setAllTasks([]);
       return;
     }
 
@@ -93,89 +98,86 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
     const unsubscribeTasks = onSnapshot(qTasks, (querySnapshot) => {
       const allFetchedTasks = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setAllTasks(allFetchedTasks); 
-
-      const activeTasks = allFetchedTasks.filter(task => !task.isArchived);
-
-      const currentDayOfWeek = currentDate.getDay();
-
-      const dailyFilteredTasks = activeTasks.filter(task => {
-        const taskDayOfWeek = currentDate.getDay();
-        
-        if (task.isDaily) {
-          return taskDayOfWeek >= 1 && taskDayOfWeek <= 5;
-        } else {
-          return task.selectedDays?.includes(taskDayOfWeek);
-        }
-      });
-      setTasks(dailyFilteredTasks);
-
-      const firstDayOfWeek = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate() - currentDate.getDay());
-      const lastDayOfWeek = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate() - currentDate.getDay() + 6);
-      
-      const weeklyFilteredTasks = activeTasks.filter(task => {
-        const taskDate = task.createdAt?.toDate();
-        if (!taskDate) return false;
-        
-        const isCreatedThisWeek = taskDate >= firstDayOfWeek && taskDate <= lastDayOfWeek;
-        
-        const isRecurringThisWeek = !task.isDaily && task.selectedDays?.some(day => {
-          const taskDayDate = new Date(firstDayOfWeek);
-          taskDayDate.setDate(taskDayDate.getDate() + day);
-          return taskDayDate >= firstDayOfWeek && taskDayDate <= lastDayOfWeek;
-        });
-        
-        return isCreatedThisWeek || isRecurringThisWeek;
-      });
-      setWeeklyTasks(weeklyFilteredTasks);
-
-      const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-      const lastDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
-
-      const monthlyFilteredTasks = activeTasks.filter(task => {
-        const taskDate = task.createdAt?.toDate();
-        if (!taskDate) return false;
-        return taskDate >= firstDayOfMonth && taskDate <= lastDayOfMonth;
-      });
-      setMonthlyTasks(monthlyFilteredTasks);
     });
 
-    const formattedDateForFetch = currentDate.toISOString().slice(0, 10);
-    const completionsQueryUserId = viewingUserId || auth.currentUser?.uid;
-    if (completionsQueryUserId) {
-        const qCompletions = query(collection(db, "dailyCompletions"), where("userId", "==", completionsQueryUserId), where("completionDate", "==", formattedDateForFetch));
-        const unsubscribeCompletions = onSnapshot(qCompletions, (querySnapshot) => {
-            const completionsMap = {};
-            querySnapshot.docs.forEach(doc => {
-                const completionData = doc.data();
-                completionsMap[completionData.taskId] = true;
-            });
-            setDailyCompletions(completionsMap);
+    return () => unsubscribeTasks();
+  }, [viewingUserId]);
 
-            const activeTasks = allTasks.filter(task => !task.isArchived);
-            const dailyTasksToFilter = activeTasks.filter(task => {
-              const taskDayOfWeek = currentDate.getDay();
-              if (task.isDaily) {
-                return taskDayOfWeek >= 1 && taskDayOfWeek <= 5;
-              } else {
-                return task.selectedDays?.includes(taskDayOfWeek);
-              }
-            });
-            
-            setPendingTasks(dailyTasksToFilter.filter(task => !completionsMap[task.id]));
-            setCompletedTasks(dailyTasksToFilter.filter(task => completionsMap[task.id]));
-        });
-        return () => {
-            unsubscribeCompletions();
-            unsubscribeTasks();
-            unsubscribeCategories();
-        };
+  // NOVO useEffect para buscar as conclusões do dia
+  useEffect(() => {
+    const completionsQueryUserId = viewingUserId || auth.currentUser?.uid;
+    const formattedDateForFetch = currentDate.toISOString().slice(0, 10);
+    
+    if (!completionsQueryUserId) {
+      setDailyCompletions({});
+      return;
     }
 
-    return () => {
-      unsubscribeCategories();
-      unsubscribeTasks();
-    };
-  }, [currentDate, viewingUserId, allTasks]);
+    const qCompletions = query(
+      collection(db, "dailyCompletions"), 
+      where("userId", "==", completionsQueryUserId), 
+      where("completionDate", "==", formattedDateForFetch)
+    );
+    
+    const unsubscribeCompletions = onSnapshot(qCompletions, (querySnapshot) => {
+        const completionsMap = {};
+        querySnapshot.docs.forEach(doc => {
+            const completionData = doc.data();
+            completionsMap[completionData.taskId] = completionData;
+        });
+        setDailyCompletions(completionsMap);
+    });
+
+    return () => unsubscribeCompletions();
+  }, [currentDate, viewingUserId]);
+
+  // NOVO useEffect para filtrar as tarefas com base na lista de tarefas e nas conclusões
+  useEffect(() => {
+    const activeTasks = allTasks.filter(task => !task.isArchived);
+    const dailyTasksToFilter = activeTasks.filter(task => {
+        const taskDayOfWeek = currentDate.getDay();
+        if (task.isDaily) {
+            return taskDayOfWeek >= 1 && taskDayOfWeek <= 5;
+        } else {
+            return task.selectedDays?.includes(taskDayOfWeek);
+        }
+    });
+    
+    setTasks(dailyTasksToFilter);
+    setPendingTasks(dailyTasksToFilter.filter(task => !dailyCompletions[task.id]));
+    setCompletedTasks(dailyTasksToFilter.filter(task => dailyCompletions[task.id]));
+    
+    const firstDayOfWeek = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate() - currentDate.getDay());
+    const lastDayOfWeek = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate() - currentDate.getDay() + 6);
+    
+    const weeklyFilteredTasks = activeTasks.filter(task => {
+      const taskDate = task.createdAt?.toDate();
+      if (!taskDate) return false;
+      
+      const isCreatedThisWeek = taskDate >= firstDayOfWeek && taskDate <= lastDayOfWeek;
+      
+      const isRecurringThisWeek = !task.isDaily && task.selectedDays?.some(day => {
+        const taskDayDate = new Date(firstDayOfWeek);
+        taskDayDate.setDate(taskDayDate.getDate() + day);
+        return taskDayDate >= firstDayOfWeek && taskDayDate <= lastDayOfWeek;
+      });
+      
+      return isCreatedThisWeek || isRecurringThisWeek;
+    });
+    setWeeklyTasks(weeklyFilteredTasks);
+
+    const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+    const lastDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+
+    const monthlyFilteredTasks = activeTasks.filter(task => {
+      const taskDate = task.createdAt?.toDate();
+      if (!taskDate) return false;
+      return taskDate >= firstDayOfMonth && taskDate <= lastDayOfMonth;
+    });
+    setMonthlyTasks(monthlyFilteredTasks);
+
+  }, [currentDate, allTasks, dailyCompletions]);
+
 
   const handlePreviousDay = () => {
     const newDate = new Date(currentDate);
@@ -215,6 +217,7 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
           taskId,
           userId: viewingUserId || auth.currentUser.uid,
           completionDate: formattedDate,
+          completionTimestamp: serverTimestamp(),
         });
       }
     } catch (error) {
@@ -346,9 +349,7 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
     }
     return task.turno === currentTurno;
   };
-
-  // NOVO: Variável para controlar a exibição dos botões de edição de tarefas
-  // Permite edição se for master OU se a permissão do usuário for true
+  
   const canManageTasks = userRole === 'master' || (userData?.canEditTasks ?? true);
 
   return (
@@ -680,7 +681,7 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
         viewingUserId={viewingUserId}
       />}
       {showReportModal && <ReportModal isVisible={showReportModal} onClose={() => setShowReportModal(false)} allTasks={allTasks} userData={userData} onOpenDailyReport={handleOpenDailyReport} viewingUserId={viewingUserId} />}
-      {showEditUserModal && <EditUserModal isVisible={showEditUserModal} onClose={() => setShowEditUserModal(false)} viewingUserId={viewingUserId} />}
+      {showEditUserModal && <EditUserModal isVisible={showEditUserModal} onClose={() => setShowEditUserModal(false)} viewingUserId={viewingUserId} userRole={userRole} />}
       
       {showDailyReportModal && (
         <DailyReportModal 
@@ -692,6 +693,7 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
           allTasks={allTasks}
           date={selectedDailyReportDate}
           categories={categories}
+          viewingUserId={viewingUserId}
         />
       )}
 
