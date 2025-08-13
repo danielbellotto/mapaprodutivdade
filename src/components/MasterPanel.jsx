@@ -1,19 +1,43 @@
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../utils/firebase';
-import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
-import { signOut } from 'firebase/auth'; // Importação CORRETA do signOut
+import { collection, query, onSnapshot, orderBy, getDoc, doc } from 'firebase/firestore';
+import { signOut } from 'firebase/auth';
+import { EditUserModal } from './EditUserModal';
 
 export function MasterPanel({ onSwitchToNormalMode, onLogout, onViewCollaboratorDashboard }) {
   const [users, setUsers] = useState([]);
   const [allTasks, setAllTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedUserId, setExpandedUserId] = useState(null);
+  const [showEditUserModal, setShowEditUserModal] = useState(false);
+  const [userToEdit, setUserToEdit] = useState(null);
+  const [currentUserRole, setCurrentUserRole] = useState(null); // NOVO: Estado para a função do usuário logado
 
   useEffect(() => {
+    const fetchCurrentUserRole = async () => {
+      const user = auth.currentUser;
+      if (user) {
+        const userDoc = await getDoc(doc(db, "users", user.uid));
+        if (userDoc.exists()) {
+          setCurrentUserRole(userDoc.data().role);
+        }
+      }
+    };
+
     const qUsers = query(collection(db, "users"), orderBy("createdAt"));
-    const unsubscribeUsers = onSnapshot(qUsers, (querySnapshot) => {
+    const unsubscribeUsers = onSnapshot(qUsers, async (querySnapshot) => {
       const usersArray = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setUsers(usersArray);
+
+      const usersWithDetails = await Promise.all(usersArray.map(async (user) => {
+        const userDetailsRef = doc(db, "users", user.id);
+        const userDetailsSnap = await getDoc(userDetailsRef);
+        return {
+          ...user,
+          userDetails: userDetailsSnap.exists() ? userDetailsSnap.data() : {},
+        };
+      }));
+
+      setUsers(usersWithDetails);
     });
 
     const qTasks = query(collection(db, "tasks"));
@@ -22,7 +46,9 @@ export function MasterPanel({ onSwitchToNormalMode, onLogout, onViewCollaborator
       setAllTasks(tasksArray);
       setLoading(false);
     });
-    
+
+    fetchCurrentUserRole(); // NOVO: Busca a função do usuário logado
+
     return () => {
       unsubscribeUsers();
       unsubscribeTasks();
@@ -31,7 +57,7 @@ export function MasterPanel({ onSwitchToNormalMode, onLogout, onViewCollaborator
 
   const calculateProductivity = (userTasks, date) => {
     const today = date;
-    const currentDayOfWeek = today.getDay(); // 0 (Domingo) a 6 (Sábado)
+    const currentDayOfWeek = today.getDay();
     
     const dailyTasks = userTasks.filter(task => {
         if (task.isDaily) {
@@ -88,8 +114,14 @@ export function MasterPanel({ onSwitchToNormalMode, onLogout, onViewCollaborator
     setExpandedUserId(prevId => (prevId === userId ? null : userId));
   };
   
-  const handleLogoutMaster = async () => {
-    await onLogout();
+  const handleOpenEditUserModal = (user) => {
+    setUserToEdit(user);
+    setShowEditUserModal(true);
+  };
+
+  const handleCloseEditUserModal = () => {
+    setShowEditUserModal(false);
+    setUserToEdit(null);
   };
 
   return (
@@ -161,6 +193,13 @@ export function MasterPanel({ onSwitchToNormalMode, onLogout, onViewCollaborator
                               {productivity.daily}% | {productivity.weekly}% | {productivity.monthly}%
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                              {/* NOVO BOTÃO: Editar Dados */}
+                              <button
+                                onClick={() => handleOpenEditUserModal(user)}
+                                className="text-gray-600 hover:text-gray-900 font-semibold"
+                              >
+                                Editar Dados
+                              </button>
                               <button
                                 onClick={() => handleToggleDetails(user.id)}
                                 className="text-indigo-600 hover:text-indigo-900 font-semibold"
@@ -224,6 +263,15 @@ export function MasterPanel({ onSwitchToNormalMode, onLogout, onViewCollaborator
           </div>
         </main>
       </div>
+
+      {showEditUserModal && userToEdit && (
+        <EditUserModal 
+          isVisible={showEditUserModal}
+          onClose={handleCloseEditUserModal}
+          viewingUserId={userToEdit.id}
+          userRole={currentUserRole} // NOVO: Passa a função do usuário logado
+        />
+      )}
     </div>
   );
 }

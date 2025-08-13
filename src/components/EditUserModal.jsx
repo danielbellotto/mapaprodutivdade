@@ -3,10 +3,11 @@ import { ModalWrapper } from './ModalWrapper';
 import { db, auth } from '../utils/firebase';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 
-export function EditUserModal({ onClose, isVisible, viewingUserId }) {
+export function EditUserModal({ onClose, isVisible, viewingUserId, userRole }) {
   const [name, setName] = useState('');
   const [sector, setSector] = useState('');
   const [position, setPosition] = useState('');
+  const [canEditTasks, setCanEditTasks] = useState(true);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -26,6 +27,7 @@ export function EditUserModal({ onClose, isVisible, viewingUserId }) {
         setName(data.name || '');
         setSector(data.sector || '');
         setPosition(data.position || '');
+        setCanEditTasks(data.canEditTasks !== undefined ? data.canEditTasks : true);
       }
       setLoading(false);
     };
@@ -51,6 +53,7 @@ export function EditUserModal({ onClose, isVisible, viewingUserId }) {
         name,
         sector,
         position,
+        canEditTasks,
       });
       alert('Dados atualizados com sucesso!');
       onClose();
@@ -98,6 +101,21 @@ export function EditUserModal({ onClose, isVisible, viewingUserId }) {
               required
             />
           </div>
+          {/* CORREÇÃO: Mostra o checkbox se o usuário logado for 'master' e estiver editando outro perfil */}
+          {(userRole === 'master' && auth.currentUser?.uid !== viewingUserId) && (
+            <div className="flex items-center space-x-2 mt-4">
+              <input
+                type="checkbox"
+                id="canEditTasks"
+                checked={canEditTasks}
+                onChange={(e) => setCanEditTasks(e.target.checked)}
+                className="form-checkbox h-4 w-4 text-indigo-600"
+              />
+              <label htmlFor="canEditTasks" className="text-sm font-bold text-gray-700">
+                Pode Editar/Gerenciar Tarefas
+              </label>
+            </div>
+          )}
           <div className="flex justify-end space-x-3 mt-6">
             <button
               type="submit"

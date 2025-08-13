@@ -51,7 +51,6 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
         if (docSnap.exists()) {
           setUserData(docSnap.data());
         } else {
-          setUserData(null);
         }
       } else {
       }
@@ -347,7 +346,11 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
     }
     return task.turno === currentTurno;
   };
-  
+
+  // NOVO: Variável para controlar a exibição dos botões de edição de tarefas
+  // Permite edição se for master OU se a permissão do usuário for true
+  const canManageTasks = userRole === 'master' || (userData?.canEditTasks ?? true);
+
   return (
     <div className="min-h-screen bg-gray-100 p-4 font-inter">
       <div className="max-w-6xl mx-auto">
@@ -397,7 +400,7 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
                 </div>
               </div>
               <p className="text-xs text-gray-600">
-                {weeklyTasks.filter(t => t.completed).length} de {weeklyTasks.length} concluídas
+                {weeklyTasks.filter(t => dailyCompletions[t.id]).length} de {weeklyTasks.length} concluídas
               </p>
             </div>
             
@@ -427,40 +430,42 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
                 </div>
               </div>
               <p className="text-xs text-gray-600">
-                {monthlyTasks.filter(t => t.completed).length} de {monthlyTasks.length} concluídas
+                {monthlyTasks.filter(t => dailyCompletions[t.id]).length} de {monthlyTasks.length} concluídas
               </p>
             </div>
           </div>
 
           {/* Botões de Ação */}
-          <div className="flex justify-center mb-6">
-            <div className="grid grid-cols-2 gap-4">
-              <button
-                onClick={() => setShowTaskModal(true)}
-                className="w-48 bg-green-500 text-white p-3 rounded-md shadow-md font-semibold hover:bg-green-600 transition"
-              >
-                + Nova Tarefa
-              </button>
-              <button
-                onClick={() => setShowCreateCategoryModal(true)}
-                className="w-48 bg-purple-500 text-white p-3 rounded-md shadow-md font-semibold hover:bg-purple-600 transition"
-              >
-                + Nova Categoria
-              </button>
-              <button
-                onClick={() => setShowTaskManagementModal(true)}
-                className="w-48 bg-blue-500 text-white p-3 rounded-md shadow-md font-semibold hover:bg-blue-600 transition"
-              >
-                Gerenciar Tarefas
-              </button>
-              <button
-                onClick={() => setShowManageCategoriesModal(true)}
-                className="w-48 bg-orange-500 text-white p-3 rounded-md shadow-md font-semibold hover:bg-orange-600 transition"
-              >
-                Gerenciar Categorias
-              </button>
+          {canManageTasks && (
+            <div className="flex justify-center mb-6">
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  onClick={() => setShowTaskModal(true)}
+                  className="w-48 bg-green-500 text-white p-3 rounded-md shadow-md font-semibold hover:bg-green-600 transition"
+                >
+                  + Nova Tarefa
+                </button>
+                <button
+                  onClick={() => setShowCreateCategoryModal(true)}
+                  className="w-48 bg-purple-500 text-white p-3 rounded-md shadow-md font-semibold hover:bg-purple-600 transition"
+                >
+                  + Nova Categoria
+                </button>
+                <button
+                  onClick={() => setShowTaskManagementModal(true)}
+                  className="w-48 bg-blue-500 text-white p-3 rounded-md shadow-md font-semibold hover:bg-blue-600 transition"
+                >
+                  Gerenciar Tarefas
+                </button>
+                <button
+                  onClick={() => setShowManageCategoriesModal(true)}
+                  className="w-48 bg-orange-500 text-white p-3 rounded-md shadow-md font-semibold hover:bg-orange-600 transition"
+                >
+                  Gerenciar Categorias
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Botão de Relatórios Centralizado */}
           <div className="flex justify-center mb-6">
@@ -511,10 +516,10 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
               <thead>
                 <tr>
                   <th className="sticky-header sticky-left bg-white text-left p-2 w-32">CATEGORIA</th>
-                  <th className="sticky-header bg-white text-left p-2 w-48">PRIORIDADE</th>
+                  {canManageTasks && <th className="sticky-header bg-white text-left p-2 w-48">PRIORIDADE</th>}
                   <th className="sticky-header bg-white text-center p-2">TAREFA</th>
                   <th className="sticky-header bg-white text-right p-2 w-24">AÇÃO</th>
-                  <th className="sticky-header bg-white text-right p-2 w-12"></th>
+                  {canManageTasks && <th className="sticky-header bg-white text-right p-2 w-12"></th>}
                 </tr>
               </thead>
               <tbody>
@@ -532,26 +537,28 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
                         >
                           {task.category}
                         </td>
-                        <td
-                          className={`p-2 text-center text-white font-semibold text-xs align-middle ${getPriorityColor(task.priority)}`}
-                          onClick={() => setEditingPriorityId(task.id)}
-                        >
-                            {editingPriorityId === task.id ? (
-                                <div className="absolute z-10 bg-white shadow-md rounded-lg p-2 flex flex-col space-y-1 w-48">
-                                    {priorities.map(p => (
-                                        <button
-                                            key={p.value}
-                                            onClick={() => handleUpdatePriority(task.id, p.value)}
-                                            className={`w-full text-center py-1 rounded-md text-sm font-semibold transition ${getPriorityColor(p.value)} text-white`}
-                                        >
-                                            {p.text}
-                                        </button>
-                                    ))}
-                                </div>
-                            ) : (
-                                getPriorityText(task.priority)
-                            )}
-                        </td>
+                        {canManageTasks && (
+                          <td
+                            className={`p-2 text-center text-white font-semibold text-xs align-middle ${getPriorityColor(task.priority)}`}
+                            onClick={() => setEditingPriorityId(task.id)}
+                          >
+                              {editingPriorityId === task.id ? (
+                                  <div className="absolute z-10 bg-white shadow-md rounded-lg p-2 flex flex-col space-y-1 w-48">
+                                      {priorities.map(p => (
+                                          <button
+                                              key={p.value}
+                                              onClick={() => handleUpdatePriority(task.id, p.value)}
+                                              className={`w-full text-center py-1 rounded-md text-sm font-semibold transition ${getPriorityColor(p.value)} text-white`}
+                                          >
+                                              {p.text}
+                                          </button>
+                                      ))}
+                                  </div>
+                              ) : (
+                                  getPriorityText(task.priority)
+                              )}
+                          </td>
+                        )}
                         <td className="p-2 text-center">
                           <p className={`text-lg text-gray-800`}>
                             {task.taskName}
@@ -566,34 +573,36 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
                             Marcar
                           </button>
                         </td>
-                        <td className="p-2 text-center space-y-1">
-                          <button
-                            onClick={() => handleMoveTask(task.id, 'up')}
-                            disabled={index === 0}
-                            className={`block p-1 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300 transition disabled:opacity-30 disabled:cursor-not-allowed`}
-                            title="Mover para cima"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => handleMoveTask(task.id, 'down')}
-                            disabled={index === pendingTasks.length - 1}
-                            className={`block p-1 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300 transition disabled:opacity-30 disabled:cursor-not-allowed`}
-                            title="Mover para baixo"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </button>
-                        </td>
+                        {canManageTasks && (
+                          <td className="p-2 text-center space-y-1">
+                            <button
+                              onClick={() => handleMoveTask(task.id, 'up')}
+                              disabled={index === 0}
+                              className={`block p-1 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300 transition disabled:opacity-30 disabled:cursor-not-allowed`}
+                              title="Mover para cima"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => handleMoveTask(task.id, 'down')}
+                              disabled={index === pendingTasks.length - 1}
+                              className={`block p-1 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300 transition disabled:opacity-30 disabled:cursor-not-allowed`}
+                              title="Mover para baixo"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                              </svg>
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     );
                   })
                 ) : (
                   <tr>
-                    <td colSpan="5" className="text-center p-4 text-gray-500">Nenhuma tarefa pendente para este dia.</td>
+                    <td colSpan={canManageTasks ? 5 : 3} className="text-center p-4 text-gray-500">Nenhuma tarefa pendente para este dia.</td>
                   </tr>
                 )}
               </tbody>
@@ -607,7 +616,7 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
               <thead>
                 <tr>
                   <th className="sticky-header sticky-left bg-white text-left p-2 w-32">CATEGORIA</th>
-                  <th className="sticky-header bg-white text-left p-2 w-48">PRIORIDADE</th>
+                  {canManageTasks && <th className="sticky-header bg-white text-left p-2 w-48">PRIORIDADE</th>}
                   <th className="sticky-header bg-white text-center p-2">TAREFA</th>
                   <th className="sticky-header bg-white text-right p-2 w-24">AÇÃO</th>
                 </tr>
@@ -626,12 +635,14 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
                         >
                           {task.category}
                         </td>
-                        <td
-                          className={`p-2 text-center text-white font-semibold text-xs align-middle bg-gray-400`}
-                          style={{ backgroundColor: 'rgb(156 163 175)' }}
-                        >
-                          {getPriorityText(task.priority)}
-                        </td>
+                        {canManageTasks && (
+                          <td
+                            className={`p-2 text-center text-white font-semibold text-xs align-middle bg-gray-400`}
+                            style={{ backgroundColor: 'rgb(156 163 175)' }}
+                          >
+                            {getPriorityText(task.priority)}
+                          </td>
+                        )}
                         <td className="p-2 text-center text-gray-500">
                           <p className={`text-lg line-through`}>
                             {task.taskName}
@@ -650,7 +661,7 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
                   })
                 ) : (
                   <tr>
-                    <td colSpan="4" className="text-center p-4 text-gray-500">Nenhuma tarefa concluída para este dia.</td>
+                    <td colSpan={canManageTasks ? 4 : 3} className="text-center p-4 text-gray-500">Nenhuma tarefa concluída para este dia.</td>
                   </tr>
                 )}
               </tbody>

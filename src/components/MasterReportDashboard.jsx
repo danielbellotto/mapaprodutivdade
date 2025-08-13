@@ -34,12 +34,7 @@ const MasterReportDashboard = ({ allUsers, allUsersProductivity, onSelectUser, o
                                     </div>
                                 </div>
                                 <div className="flex items-center space-x-4 mt-2 sm:mt-0">
-                                    <p className="text-lg font-semibold text-gray-700">
-                                        Produtividade de Hoje:
-                                        <span className={`font-bold ml-2 ${productivity.percentage >= 0.8 ? 'text-green-600' : 'text-red-600'}`}>
-                                            {(productivity.percentage * 100).toFixed(0)}%
-                                        </span>
-                                    </p>
+                                    {/* NOVO BOTÃO: Editar Dados */}
                                     <button
                                         onClick={() => onEditCollaborator(user)}
                                         className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors shadow-lg font-semibold text-sm"
