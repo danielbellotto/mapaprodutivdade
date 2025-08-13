@@ -54,7 +54,6 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
           setUserData(null);
         }
       } else {
-        setUserData(null);
       }
     };
 
@@ -87,7 +86,6 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
       return;
     }
 
-    // QUERY REVISADA: Busca TODAS as tarefas, incluindo as arquivadas
     const qTasks = query(
       collection(db, "tasks"),
       where("userId", "==", tasksQueryUserId),
@@ -97,10 +95,9 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
       const allFetchedTasks = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setAllTasks(allFetchedTasks); 
 
-      // FILTRAGEM AGORA É FEITA NO FRONT-END, GARANTINDO QUE AS TAREFAS ARQUIVADAS NÃO APAREÇAM
       const activeTasks = allFetchedTasks.filter(task => !task.isArchived);
 
-      const currentDayOfWeek = currentDate.getDay(); // 0 (Domingo) a 6 (Sábado)
+      const currentDayOfWeek = currentDate.getDay();
 
       const dailyFilteredTasks = activeTasks.filter(task => {
         const taskDayOfWeek = currentDate.getDay();
@@ -296,8 +293,8 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
 
   const totalDailyTasks = pendingTasks.length + completedTasks.length;
   const dailyProgress = totalDailyTasks > 0 ? (completedTasks.length / totalDailyTasks) * 100 : 0;
-  const weeklyProgress = weeklyTasks.length > 0 ? (weeklyTasks.filter(t => t.completed).length / weeklyTasks.length) * 100 : 0;
-  const monthlyProgress = monthlyTasks.length > 0 ? (monthlyTasks.filter(t => t.completed).length / monthlyTasks.length) * 100 : 0;
+  const weeklyProgress = weeklyTasks.length > 0 ? (weeklyTasks.filter(t => dailyCompletions[t.id]).length / weeklyTasks.length) * 100 : 0;
+  const monthlyProgress = monthlyTasks.length > 0 ? (monthlyTasks.filter(t => dailyCompletions[t.id]).length / monthlyTasks.length) * 100 : 0;
   
   const userInfo = isSupervisoryMode ? `Visualizando mapa de: ${viewingUserName}` : (userData?.name ? `${userData?.name || 'Master'} | Setor: ${userData?.sector || 'N/A'} | Função: ${userData?.position || 'N/A'}` : auth.currentUser?.email || 'Usuário');
 
