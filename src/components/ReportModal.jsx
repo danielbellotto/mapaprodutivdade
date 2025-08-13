@@ -3,7 +3,7 @@ import { ModalWrapper } from './ModalWrapper';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 
-export function ReportModal({ onClose, isVisible, allTasks, userData, onOpenDailyReport, viewingUserId }) {
+export function ReportModal({ onClose, isVisible, allTasks, userData, onOpenDailyReport, viewingUserId, size }) {
     const [month, setMonth] = useState(new Date().getMonth());
     const [year, setYear] = useState(new Date().getFullYear());
     const [monthlyReportData, setMonthlyReportData] = useState([]);
@@ -88,7 +88,7 @@ export function ReportModal({ onClose, isVisible, allTasks, userData, onOpenDail
     const monthlyProgress = monthlyTotalTasks > 0 ? (monthlyCompletedTasks / monthlyTotalTasks) * 100 : 0;
 
     return (
-        <ModalWrapper onClose={onClose} isVisible={isVisible} title="Relatórios de Produtividade" size="lg">
+        <ModalWrapper onClose={onClose} isVisible={isVisible} title="Relatórios de Produtividade" size={size}>
             <div className="flex space-x-4 mb-6">
                 <select 
                     value={month} 

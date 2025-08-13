@@ -1,35 +1,40 @@
 import React from 'react';
 
-export function ModalWrapper({ children, onClose, title, isVisible, size = 'md' }) {
-  if (!isVisible) return null;
+export function ModalWrapper({ children, onClose, isVisible, title, size = 'md' }) {
+    if (!isVisible) return null;
 
-  const sizeClasses = {
-    sm: 'max-w-sm',
-    md: 'max-w-lg',
-    lg: 'max-w-2xl',
-    xl: 'max-w-4xl'
-  };
+    const sizeClasses = {
+        sm: 'max-w-sm',
+        md: 'max-w-2xl', // Ajustado o tamanho padrão para ser um pouco maior
+        lg: 'max-w-4xl', // Novo tamanho grande
+        xl: 'max-w-screen-xl', // Novo tamanho extra grande
+        full: 'max-w-full'
+    };
+    const modalSizeClass = sizeClasses[size] || sizeClasses.md;
 
-  return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center z-50 p-4">
-      <div className={`relative p-6 bg-white w-full rounded-xl shadow-2xl font-inter ${sizeClasses[size]}`}>
-        {title && (
-          <h2 className="text-2xl font-bold mb-4 text-center text-gray-800">
-            {title}
-          </h2>
-        )}
-        
-        {children}
-
-        <div className="mt-6 flex justify-end">
-          <button
+    return (
+        <div 
+            className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black bg-opacity-50 pt-16"
             onClick={onClose}
-            className="px-4 py-2 bg-gray-300 text-gray-800 font-semibold rounded-md shadow-md hover:bg-gray-400 transition"
-          >
-            Fechar
-          </button>
+        >
+            <div 
+                className={`relative p-6 bg-white w-full rounded-xl shadow-2xl font-inter ${modalSizeClass}`}
+                onClick={(e) => e.stopPropagation()} // Impede que o clique no modal feche-o
+            >
+                <div className="flex justify-between items-center pb-4 border-b">
+                    {title && (
+                        <h2 className="text-2xl font-bold text-center text-gray-800">
+                            {title}
+                        </h2>
+                    )}
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-800 text-2xl font-bold ml-auto">
+                        &times;
+                    </button>
+                </div>
+                <div className="p-4 max-h-[70vh] overflow-y-auto">
+                    {children}
+                </div>
+            </div>
         </div>
-      </div>
-    </div>
-  );
+    );
 }
