@@ -7,6 +7,32 @@ export function DailyReportModal({ onClose, isVisible, allTasks, date, categorie
     const [tasksForDate, setTasksForDate] = useState([]);
     const [dailyCompletionsData, setDailyCompletionsData] = useState({});
 
+    // FUNÇÕES DE AJUDA PARA CORES E TEXTOS (ADICIONADAS AQUI)
+    const getCategoryColor = (categoryName) => {
+      const category = categories.find(cat => cat.name === categoryName);
+      return category?.color || '#D1D5DB';
+    };
+
+    const getPriorityText = (priority) => {
+      switch(priority) {
+        case 'importante-urgente': return 'Importante e Urgente';
+        case 'importante-nao-urgente': return 'Importante mas Não Urgente';
+        case 'urgente-nao-importante': return 'Urgente mas Não Importante';
+        case 'nao-urgente-nao-importante': return 'Não Urgente e Não Importante';
+        default: return 'Sem Prioridade';
+      }
+    };
+    
+    const getPriorityColor = (priority) => {
+      switch(priority) {
+        case 'importante-urgente': return 'bg-green-500';
+        case 'importante-nao-urgente': return 'bg-orange-500';
+        case 'urgente-nao-importante': return 'bg-blue-500';
+        case 'nao-urgente-nao-importante': return 'bg-red-500';
+        default: return 'bg-gray-400';
+      }
+    };
+
     useEffect(() => {
         if (!date || !isVisible || !viewingUserId) return;
 
@@ -24,7 +50,6 @@ export function DailyReportModal({ onClose, isVisible, allTasks, date, categorie
         
         setTasksForDate(tasksOnDate);
 
-        // NOVA LÓGICA: Busca as conclusões do dia para pegar o timestamp
         const qCompletions = query(
             collection(db, "dailyCompletions"), 
             where("userId", "==", viewingUserId),
@@ -46,21 +71,6 @@ export function DailyReportModal({ onClose, isVisible, allTasks, date, categorie
 
     const completedTasks = tasksForDate.filter(task => dailyCompletionsData[task.id]);
     const pendingTasks = tasksForDate.filter(task => !dailyCompletionsData[task.id]);
-    
-    const getCategoryColor = (categoryName) => {
-      const category = categories.find(cat => cat.name === categoryName);
-      return category?.color || '#D1D5DB';
-    };
-
-    const getPriorityText = (priority) => {
-      switch(priority) {
-        case 'importante-urgente': return 'Importante e Urgente';
-        case 'importante-nao-urgente': return 'Importante mas Não Urgente';
-        case 'urgente-nao-importante': return 'Urgente mas Não Importante';
-        case 'nao-urgente-nao-importante': return 'Não Urgente e Não Importante';
-        default: return 'Sem Prioridade';
-      }
-    };
     
     const formattedDate = date ? date.toLocaleDateString('pt-BR', {
       day: 'numeric',
@@ -116,7 +126,6 @@ export function DailyReportModal({ onClose, isVisible, allTasks, date, categorie
                                                       {task.category}
                                                   </span>
                                                 </td>
-                                                {/* NOVO CAMPO: Exibe o horário de conclusão */}
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                                     {completionTime ? completionTime.toLocaleTimeString('pt-BR') : 'N/A'}
                                                 </td>
