@@ -9,7 +9,8 @@ import { ReportModal } from './ReportModal';
 import { DailyReportModal } from './DailyReportModal';
 import { EditUserModal } from './EditUserModal';
 import { EditTaskModal } from './EditTaskModal';
-import { collection, query, onSnapshot, orderBy, doc, updateDoc, getDoc, where, writeBatch, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { TaskTimerModal } from './TaskTimerModal';
+import { collection, query, onSnapshot, orderBy, doc, updateDoc, getDoc, where, writeBatch, setDoc, deleteDoc, serverTimestamp, addDoc } from 'firebase/firestore';
 
 export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUserId, viewingUserName }) {
   const [showTaskModal, setShowTaskModal] = useState(false);
@@ -22,6 +23,8 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
   const [showEditUserModal, setShowEditUserModal] = useState(false);
   const [showEditTaskModal, setShowEditTaskModal] = useState(false);
   const [taskToEdit, setTaskToEdit] = useState(null);
+  const [showTaskTimerModal, setShowTaskTimerModal] = useState(false);
+  const [taskToFocus, setTaskToFocus] = useState(null);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [tasks, setTasks] = useState([]);
   const [pendingTasks, setPendingTasks] = useState([]);
@@ -34,6 +37,11 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
   const [isSupervisoryMode, setIsSupervisoryMode] = useState(false);
   const [editingPriorityId, setEditingPriorityId] = useState(null);
   const [dailyCompletions, setDailyCompletions] = useState({});
+  const [taskSessions, setTaskSessions] = useState({});
+  const [isOffTask, setIsOffTask] = useState(false);
+  const [offTaskSessionId, setOffTaskSessionId] = useState(null);
+  const [offTaskStartTime, setOffTaskStartTime] = useState(null);
+
 
   useEffect(() => {
     if (userRole === 'master' && viewingUserId && viewingUserId !== auth.currentUser.uid) {
@@ -82,7 +90,6 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
     return () => unsubscribeCategories();
   }, [viewingUserId]);
 
-  // NOVO useEffect para buscar todas as tarefas
   useEffect(() => {
     const tasksQueryUserId = viewingUserId || auth.currentUser?.uid;
     if (!tasksQueryUserId) {
@@ -103,7 +110,6 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
     return () => unsubscribeTasks();
   }, [viewingUserId]);
 
-  // NOVO useEffect para buscar as conclusões do dia
   useEffect(() => {
     const completionsQueryUserId = viewingUserId || auth.currentUser?.uid;
     const formattedDateForFetch = currentDate.toISOString().slice(0, 10);
@@ -130,8 +136,29 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
 
     return () => unsubscribeCompletions();
   }, [currentDate, viewingUserId]);
+  
+  useEffect(() => {
+    const sessionsQueryUserId = viewingUserId || auth.currentUser?.uid;
+    if (!sessionsQueryUserId) {
+      setTaskSessions({});
+      return;
+    }
+    const qSessions = query(collection(db, "taskSessions"), where("userId", "==", sessionsQueryUserId));
+    const unsubscribeSessions = onSnapshot(qSessions, (querySnapshot) => {
+      const sessionsMap = {};
+      querySnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        if (!sessionsMap[data.taskId]) {
+          sessionsMap[data.taskId] = { duration: 0 };
+        }
+        sessionsMap[data.taskId].duration += data.duration;
+      });
+      setTaskSessions(sessionsMap);
+    });
 
-  // NOVO useEffect para filtrar as tarefas com base na lista de tarefas e nas conclusões
+    return () => unsubscribeSessions();
+  }, [viewingUserId]);
+
   useEffect(() => {
     const activeTasks = allTasks.filter(task => !task.isArchived);
     const dailyTasksToFilter = activeTasks.filter(task => {
@@ -178,6 +205,64 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
 
   }, [currentDate, allTasks, dailyCompletions]);
 
+  const handleToggleOffTask = async () => {
+    const sessionsRef = collection(db, "offTaskSessions");
+    const formattedDate = currentDate.toISOString().slice(0, 10);
+    const userId = viewingUserId || auth.currentUser.uid;
+  
+    if (isOffTask) {
+      const offTaskDocRef = doc(sessionsRef, offTaskSessionId);
+      const startTime = offTaskStartTime; 
+      const endTime = new Date();
+      const duration = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
+  
+      await updateDoc(offTaskDocRef, {
+        endTime: serverTimestamp(),
+        duration: duration,
+        status: 'finalized',
+      });
+  
+      setIsOffTask(false);
+      setOffTaskSessionId(null);
+      setOffTaskStartTime(null);
+    } else {
+      const newSessionDoc = await addDoc(sessionsRef, {
+        userId,
+        completionDate: formattedDate,
+        startTime: serverTimestamp(),
+        status: 'running',
+      });
+      setOffTaskSessionId(newSessionDoc.id);
+      setOffTaskStartTime(new Date());
+      setIsOffTask(true);
+    }
+  };
+
+  const handleToggleTaskCompletion = async (taskId) => {
+    const isCompleted = !!dailyCompletions[taskId];
+    const formattedDate = currentDate.toISOString().slice(0, 10);
+    const docId = `${taskId}-${formattedDate}`;
+    const docRef = doc(db, "dailyCompletions", docId);
+  
+    try {
+      if (isCompleted) {
+        await deleteDoc(docRef);
+      } else {
+        const totalDuration = taskSessions[taskId]?.duration || 0;
+  
+        await setDoc(docRef, {
+          taskId: taskId,
+          userId: viewingUserId || auth.currentUser.uid,
+          completionDate: formattedDate,
+          completionTimestamp: serverTimestamp(),
+          totalDuration: totalDuration,
+        });
+      }
+    } catch (error) {
+      console.error("Erro ao alternar o status de conclusão da tarefa:", error);
+      alert("Erro ao alternar o status de conclusão: " + error.message);
+    }
+  };
 
   const handlePreviousDay = () => {
     const newDate = new Date(currentDate);
@@ -203,29 +288,6 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
     setCurrentDate(newDate);
   };
   
-  const handleToggleTaskCompletion = async (taskId) => {
-    const isCompleted = dailyCompletions[taskId];
-    const formattedDate = currentDate.toISOString().slice(0, 10);
-    const docId = `${taskId}-${formattedDate}`;
-    const taskCompletionRef = doc(db, "dailyCompletions", docId);
-    
-    try {
-      if (isCompleted) {
-        await deleteDoc(taskCompletionRef);
-      } else {
-        await setDoc(taskCompletionRef, {
-          taskId,
-          userId: viewingUserId || auth.currentUser.uid,
-          completionDate: formattedDate,
-          completionTimestamp: serverTimestamp(),
-        });
-      }
-    } catch (error) {
-      console.error("Erro ao atualizar o status da tarefa:", error);
-      alert("Erro ao atualizar o status da tarefa: " + error.message);
-    }
-  };
-
   const handleOpenDailyReport = (date) => {
     setSelectedDailyReportDate(date);
     setShowDailyReportModal(true);
@@ -387,10 +449,8 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
             </button>
           </div>
 
-          {/* Painel de Produtividade */}
           <div className="bg-white p-6 rounded-xl shadow-md mb-6 text-center flex items-center justify-around space-x-4">
             
-            {/* Gráfico de Produtividade Semanal */}
             <div className="flex-1">
               <h2 className="text-sm font-bold text-gray-800 mb-2">
                 Semanal
@@ -405,7 +465,6 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
               </p>
             </div>
             
-            {/* Gráfico de Produtividade Diária (Central) */}
             <div className="flex-1">
               <h2 className="text-lg font-bold text-gray-800 mb-2">
                 Produtividade de Hoje ({currentDate.toLocaleDateString('pt-BR')})
@@ -420,7 +479,6 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
               </p>
             </div>
             
-            {/* Gráfico de Produtividade Mensal */}
             <div className="flex-1">
               <h2 className="text-sm font-bold text-gray-800 mb-2">
                 Mensal
@@ -510,6 +568,16 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
             </div>
           </div>
 
+          {/* Botão "Fuga" */}
+          <div className="flex justify-center mb-6">
+            <button
+              onClick={handleToggleOffTask}
+              className={`px-8 py-3 font-semibold rounded-md shadow-md transition ${isOffTask ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'} text-white`}
+            >
+              {isOffTask ? 'Cuidado, volte para seu objetivo' : 'Foco total no objetivo!'}
+            </button>
+          </div>
+
           {/* Tabela de Tarefas Pendentes */}
           <div className="bg-white p-4 rounded-xl shadow-md mb-6">
             <h3 className="text-xl font-bold text-gray-800 mb-4">Tarefas Pendentes ({pendingTasks.length})</h3>
@@ -528,6 +596,7 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
                   pendingTasks.map((task, index) => {
                     const categoryData = categories.find(cat => cat.name === task.category);
                     const categoryColor = categoryData?.color || '#D1D5DB';
+                    
                     const isButtonDisabled = !canMarkTask(task);
                     
                     return (
@@ -565,13 +634,25 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
                             {task.taskName}
                           </p>
                         </td>
-                        <td className="p-2 text-right">
-                          <button
-                            onClick={() => handleToggleTaskCompletion(task.id)}
+                        <td className="p-2 text-right space-x-2">
+                           <button
+                            onClick={() => {
+                                handleToggleTaskCompletion(task.id);
+                            }}
                             disabled={isButtonDisabled}
-                            className={`px-3 py-1 rounded-full text-white font-semibold text-xs bg-gray-400 hover:bg-gray-500 ${isButtonDisabled && 'opacity-50 cursor-not-allowed'}`}
+                            className={`px-3 py-1 rounded-full text-white font-semibold text-xs bg-green-600 hover:bg-green-700 ${isButtonDisabled && 'opacity-50 cursor-not-allowed'}`}
+                           >
+                            Concluir
+                           </button>
+                           <button
+                            onClick={() => {
+                              setTaskToFocus(task);
+                              setShowTaskTimerModal(true);
+                            }}
+                            disabled={isButtonDisabled}
+                            className={`px-3 py-1 rounded-full text-white font-semibold text-xs bg-indigo-600 hover:bg-indigo-700 ${isButtonDisabled && 'opacity-50 cursor-not-allowed'}`}
                           >
-                            Marcar
+                            Foco na Ação
                           </button>
                         </td>
                         {canManageTasks && (
@@ -652,7 +733,7 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
                         <td className="p-2 text-right">
                           <button
                             onClick={() => handleToggleTaskCompletion(task.id)}
-                            className={`px-3 py-1 rounded-full text-white font-semibold text-xs bg-green-500 hover:bg-green-600`}
+                            className={`px-3 py-1 rounded-full text-white font-semibold text-xs bg-red-500 hover:bg-red-600`}
                           >
                             Reverter
                           </button>
@@ -673,14 +754,15 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
 
       {showTaskModal && <TaskModal isVisible={showTaskModal} onClose={() => setShowTaskModal(false)} categories={categories} viewingUserId={viewingUserId} />}
       {showCreateCategoryModal && <CreateCategoryModal isVisible={showCreateCategoryModal} onClose={() => setShowCreateCategoryModal(false)} viewingUserId={viewingUserId} />}
-      {showManageCategoriesModal && <ManageCategoriesModal isVisible={showManageCategoriesModal} onClose={() => setShowManageCategoriesModal(false)} categories={categories} viewingUserId={viewingUserId} />}
+      {showManageCategoriesModal && <ManageCategoriesModal isVisible={showManageCategoriesModal} onClose={() => setShowManageCategoriesModal(false)} categories={categories} viewingUserId={viewingUserId} size="lg" />}
       {showTaskManagementModal && <TaskManagementModal 
         isVisible={showTaskManagementModal} 
         onClose={() => setShowTaskManagementModal(false)} 
         onOpenEditTask={handleOpenEditTaskModal}
         viewingUserId={viewingUserId}
+        size="lg"
       />}
-      {showReportModal && <ReportModal isVisible={showReportModal} onClose={() => setShowReportModal(false)} allTasks={allTasks} userData={userData} onOpenDailyReport={handleOpenDailyReport} viewingUserId={viewingUserId} />}
+      {showReportModal && <ReportModal isVisible={showReportModal} onClose={() => setShowReportModal(false)} allTasks={allTasks} userData={userData} onOpenDailyReport={handleOpenDailyReport} viewingUserId={viewingUserId} size="xl" />}
       {showEditUserModal && <EditUserModal isVisible={showEditUserModal} onClose={() => setShowEditUserModal(false)} viewingUserId={viewingUserId} userRole={userRole} />}
       
       {showDailyReportModal && (
@@ -707,6 +789,18 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
         />
       )}
 
+      {showTaskTimerModal && taskToFocus && (
+        <TaskTimerModal 
+          isVisible={showTaskTimerModal}
+          onClose={() => {
+            setShowTaskTimerModal(false);
+            setTaskToFocus(null);
+          }}
+          task={taskToFocus}
+          viewingUserId={viewingUserId}
+          currentDate={currentDate}
+        />
+      )}
       <footer className="w-full text-center p-4 text-gray-500 text-sm mt-8">
         Criação e Desenvolvimento por Daniel Bellotto e Gemini
       </footer>

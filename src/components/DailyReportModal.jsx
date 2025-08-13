@@ -6,8 +6,9 @@ import { ModalWrapper } from './ModalWrapper';
 export function DailyReportModal({ onClose, isVisible, allTasks, date, categories, viewingUserId }) {
     const [tasksForDate, setTasksForDate] = useState([]);
     const [dailyCompletionsData, setDailyCompletionsData] = useState({});
+    const [taskSessions, setTaskSessions] = useState([]);
+    const [offTaskSessions, setOffTaskSessions] = useState([]);
 
-    // FUNÇÕES DE AJUDA PARA CORES E TEXTOS (ADICIONADAS AQUI)
     const getCategoryColor = (categoryName) => {
       const category = categories.find(cat => cat.name === categoryName);
       return category?.color || '#D1D5DB';
@@ -31,6 +32,13 @@ export function DailyReportModal({ onClose, isVisible, allTasks, date, categorie
         case 'nao-urgente-nao-importante': return 'bg-red-500';
         default: return 'bg-gray-400';
       }
+    };
+    
+    const formatDuration = (seconds) => {
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = seconds % 60;
+        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     };
 
     useEffect(() => {
@@ -65,7 +73,32 @@ export function DailyReportModal({ onClose, isVisible, allTasks, date, categorie
             setDailyCompletionsData(completionsMap);
         });
 
-        return () => unsubscribeCompletions();
+        const qSessions = query(
+            collection(db, "taskSessions"),
+            where("userId", "==", viewingUserId),
+            where("completionDate", "==", formattedDate)
+        );
+        const unsubscribeSessions = onSnapshot(qSessions, (querySnapshot) => {
+            const sessionsArray = querySnapshot.docs.map(doc => doc.data());
+            setTaskSessions(sessionsArray);
+        });
+        
+        const qOffTaskSessions = query(
+            collection(db, "offTaskSessions"),
+            where("userId", "==", viewingUserId),
+            where("completionDate", "==", formattedDate)
+        );
+        const unsubscribeOffTaskSessions = onSnapshot(qOffTaskSessions, (querySnapshot) => {
+            const offTaskArray = querySnapshot.docs.map(doc => doc.data());
+            setOffTaskSessions(offTaskArray);
+        });
+
+
+        return () => {
+          unsubscribeCompletions();
+          unsubscribeSessions();
+          unsubscribeOffTaskSessions();
+        }
 
     }, [date, isVisible, allTasks, viewingUserId]);
 
@@ -78,6 +111,18 @@ export function DailyReportModal({ onClose, isVisible, allTasks, date, categorie
       year: 'numeric',
       weekday: 'long',
     }).replace(/\./g, '') : '';
+    
+    const getTaskDuration = (taskId) => {
+      const sessions = taskSessions.filter(session => session.taskId === taskId);
+      const totalDuration = sessions.reduce((acc, curr) => acc + (curr.duration || 0), 0);
+      return formatDuration(totalDuration);
+    };
+    
+    const getTotalOffTaskTime = () => {
+      const totalDuration = offTaskSessions.reduce((acc, curr) => acc + (curr.duration || 0), 0);
+      return formatDuration(totalDuration);
+    };
+
 
     return (
         <ModalWrapper onClose={onClose} isVisible={isVisible} title={`Relatório Diário - ${formattedDate}`} size="lg">
@@ -85,58 +130,6 @@ export function DailyReportModal({ onClose, isVisible, allTasks, date, categorie
                 <p className="text-center text-gray-500 p-4">Nenhuma tarefa encontrada para este dia.</p>
             ) : (
                 <div className="space-y-6">
-                    {/* Tabela de Tarefas Concluídas */}
-                    <div>
-                        <h4 className="font-bold text-gray-700 mb-2">Tarefas Concluídas ({completedTasks.length})</h4>
-                        <div className="overflow-x-auto">
-                            <table className="min-w-full divide-y divide-gray-200">
-                                <thead className="bg-gray-50">
-                                    <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Tarefa
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Prioridade
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Categoria
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Concluída em
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody className="bg-white divide-y divide-gray-200">
-                                    {completedTasks.map(task => {
-                                        const categoryColor = getCategoryColor(task.category);
-                                        const completionTime = dailyCompletionsData[task.id]?.completionTimestamp?.toDate();
-
-                                        return (
-                                            <tr key={task.id}>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                                    {task.taskName}
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full text-white ${getPriorityColor(task.priority)}`}>
-                                                        {getPriorityText(task.priority)}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full text-white`} style={{backgroundColor: categoryColor}}>
-                                                      {task.category}
-                                                  </span>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    {completionTime ? completionTime.toLocaleTimeString('pt-BR') : 'N/A'}
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
                     {/* Tabela de Tarefas Pendentes */}
                     <div>
                         <h4 className="font-bold text-gray-700 mb-2">Tarefas Pendentes ({pendingTasks.length})</h4>
@@ -179,6 +172,69 @@ export function DailyReportModal({ onClose, isVisible, allTasks, date, categorie
                                 </tbody>
                             </table>
                         </div>
+                    </div>
+
+                    {/* Tabela de Tarefas Concluídas */}
+                    <div>
+                        <h4 className="font-bold text-gray-700 mb-2">Tarefas Concluídas ({completedTasks.length})</h4>
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Tarefa
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Prioridade
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Categoria
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Concluída em
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Tempo
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {completedTasks.map(task => {
+                                        const categoryColor = getCategoryColor(task.category);
+                                        const completionTime = dailyCompletionsData[task.id]?.completionTimestamp?.toDate();
+                                        const totalDuration = getTaskDuration(task.id);
+
+                                        return (
+                                            <tr key={task.id}>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                                    {task.taskName}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full text-white ${getPriorityColor(task.priority)}`}>
+                                                        {getPriorityText(task.priority)}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full text-white`} style={{backgroundColor: categoryColor}}>
+                                                      {task.category}
+                                                  </span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    {completionTime ? completionTime.toLocaleTimeString('pt-BR') : 'N/A'}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    {totalDuration}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    {/* NOVO: Linha para o tempo total de "Fuga" */}
+                    <div className="bg-gray-100 p-4 rounded-md">
+                        <h4 className="font-bold text-gray-700">Tempo Fora de Foco do Dia: <span className="font-normal">{getTotalOffTaskTime()}</span></h4>
                     </div>
                 </div>
             )}

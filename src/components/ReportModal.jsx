@@ -7,6 +7,7 @@ export function ReportModal({ onClose, isVisible, allTasks, userData, onOpenDail
     const [month, setMonth] = useState(new Date().getMonth());
     const [year, setYear] = useState(new Date().getFullYear());
     const [monthlyReportData, setMonthlyReportData] = useState([]);
+    const [totalOffTaskTime, setTotalOffTaskTime] = useState(0); // NOVO: Estado para o tempo de "fuga"
     const [loading, setLoading] = useState(false);
 
     const months = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -69,8 +70,18 @@ export function ReportModal({ onClose, isVisible, allTasks, userData, onOpenDail
                         percentage: total > 0 ? (completed / total) * 100 : 0,
                     });
                 }
-
                 setMonthlyReportData(report);
+
+                // NOVO: Buscar e somar o tempo total de "Fuga" para o mês
+                const qOffTaskSessions = query(
+                  collection(db, "offTaskSessions"),
+                  where("userId", "==", viewingUserId),
+                  where("startTime", ">=", firstDayOfMonth),
+                  where("startTime", "<=", lastDayOfMonth)
+                );
+                const offTaskSnapshot = await getDocs(qOffTaskSessions);
+                const totalOffTask = offTaskSnapshot.docs.reduce((acc, curr) => acc + (curr.data().duration || 0), 0);
+                setTotalOffTaskTime(totalOffTask);
 
             } catch (error) {
                 console.error("Erro ao buscar dados do relatório:", error);
@@ -86,9 +97,17 @@ export function ReportModal({ onClose, isVisible, allTasks, userData, onOpenDail
     const monthlyTotalTasks = monthlyReportData.reduce((acc, curr) => acc + curr.total, 0);
     const monthlyCompletedTasks = monthlyReportData.reduce((acc, curr) => acc + curr.completed, 0);
     const monthlyProgress = monthlyTotalTasks > 0 ? (monthlyCompletedTasks / monthlyTotalTasks) * 100 : 0;
+    
+    const formatDuration = (seconds) => {
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = seconds % 60;
+        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    };
+
 
     return (
-        <ModalWrapper onClose={onClose} isVisible={isVisible} title="Relatórios de Produtividade" size={size}>
+        <ModalWrapper onClose={onClose} isVisible={isVisible} title="Relatórios de Produtividade" size="lg">
             <div className="flex space-x-4 mb-6">
                 <select 
                     value={month} 
@@ -120,6 +139,11 @@ export function ReportModal({ onClose, isVisible, allTasks, userData, onOpenDail
                 <p className="text-gray-600">
                     {monthlyCompletedTasks} de {monthlyTotalTasks} tarefas concluídas
                 </p>
+            </div>
+            
+            {/* NOVO: Exibe o tempo total de "Fuga" do mês */}
+            <div className="bg-gray-100 p-4 rounded-md text-center mb-6">
+                <h4 className="font-bold text-gray-700">Tempo Total Fora de Foco: <span className="font-normal">{formatDuration(totalOffTaskTime)}</span></h4>
             </div>
 
             <div className="max-h-64 overflow-y-auto border rounded-md p-2">
