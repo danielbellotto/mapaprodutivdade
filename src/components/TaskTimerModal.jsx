@@ -2,43 +2,44 @@ import React, { useState, useEffect } from 'react';
 import { ModalWrapper } from './ModalWrapper';
 import { db, auth } from '../utils/firebase';
 import { collection, addDoc, doc, deleteDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { formatDate } from '../utils/dateUtils';
 
 export function TaskTimerModal({ onClose, isVisible, task, viewingUserId, currentDate }) {
   const [timerStatus, setTimerStatus] = useState('stopped'); // 'stopped', 'running', 'paused'
   const [sessionStartTime, setSessionStartTime] = useState(null);
-  const [elapsedTimeAtPause, setElapsedTimeAtPause] = useState(0); // NOVO: Tempo decorrido até a pausa
+  const [elapsedTimeAtPause, setElapsedTimeAtPause] = useState(0);
   const [totalSeconds, setTotalSeconds] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     let interval;
     if (timerStatus === 'running') {
-      const startRunningTime = new Date().getTime(); // Momento em que o timer começou a rodar
+      const startOfInterval = Date.now();
       interval = setInterval(() => {
-        // Atualiza o tempo com base no relógio do sistema, não no intervalo fixo
-        const newElapsedTime = Math.floor((new Date().getTime() - startRunningTime) / 1000) + elapsedTimeAtPause;
-        setTotalSeconds(newElapsedTime);
-      }, 250); // Atualiza a cada 250ms para uma contagem mais fluida na tela
+        const now = Date.now();
+        const elapsed = Math.floor((now - startOfInterval) / 1000) + elapsedTimeAtPause;
+        setTotalSeconds(elapsed);
+      }, 1000);
     }
     return () => clearInterval(interval);
   }, [timerStatus, elapsedTimeAtPause]);
 
   const handleStart = () => {
     if (timerStatus === 'stopped' || timerStatus === 'paused') {
-      setSessionStartTime(new Date()); // Usa o relógio do sistema para o início da sessão
+      setSessionStartTime(new Date());
       setTimerStatus('running');
     }
   };
 
   const handlePause = () => {
-    setElapsedTimeAtPause(totalSeconds); // Salva o tempo decorrido no momento da pausa
+    setElapsedTimeAtPause(totalSeconds);
     setTimerStatus('paused');
   };
 
   const handleFinalize = async () => {
     setIsSaving(true);
     setTimerStatus('stopped');
-    const formattedDate = currentDate.toISOString().slice(0, 10);
+    const formattedDate = formatDate(currentDate);
     const taskSessionsRef = collection(db, "taskSessions");
     
     try {
@@ -48,7 +49,7 @@ export function TaskTimerModal({ onClose, isVisible, task, viewingUserId, curren
           taskId: task.id,
           taskName: task.taskName,
           duration: totalSeconds,
-          startTime: sessionStartTime, // Usando a data do cliente para registro
+          startTime: sessionStartTime,
           endTime: new Date(),
           status: 'finalized',
           completionDate: formattedDate,

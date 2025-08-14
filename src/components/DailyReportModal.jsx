@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../utils/firebase';
 import { collection, query, onSnapshot, where } from 'firebase/firestore';
 import { ModalWrapper } from './ModalWrapper';
+import { getLocalDayBounds } from '../utils/dateUtils'; // CORREÇÃO: Importa a nova função
 
 export function DailyReportModal({ onClose, isVisible, allTasks, date, categories, viewingUserId }) {
     const [tasksForDate, setTasksForDate] = useState([]);
@@ -44,7 +45,8 @@ export function DailyReportModal({ onClose, isVisible, allTasks, date, categorie
     useEffect(() => {
         if (!date || !isVisible || !viewingUserId) return;
 
-        const formattedDate = date.toISOString().slice(0, 10);
+        // CORREÇÃO: Usar a nova abordagem de limites de data
+        const { startOfDay, endOfDay } = getLocalDayBounds(date);
 
         const tasksOnDate = allTasks.filter(task => {
             const currentDayOfWeek = date.getDay();
@@ -61,7 +63,8 @@ export function DailyReportModal({ onClose, isVisible, allTasks, date, categorie
         const qCompletions = query(
             collection(db, "dailyCompletions"), 
             where("userId", "==", viewingUserId),
-            where("completionDate", "==", formattedDate)
+            where("completionTimestamp", ">=", startOfDay),
+            where("completionTimestamp", "<=", endOfDay)
         );
         
         const unsubscribeCompletions = onSnapshot(qCompletions, (querySnapshot) => {
@@ -76,7 +79,8 @@ export function DailyReportModal({ onClose, isVisible, allTasks, date, categorie
         const qSessions = query(
             collection(db, "taskSessions"),
             where("userId", "==", viewingUserId),
-            where("completionDate", "==", formattedDate)
+            where("completionTimestamp", ">=", startOfDay),
+            where("completionTimestamp", "<=", endOfDay)
         );
         const unsubscribeSessions = onSnapshot(qSessions, (querySnapshot) => {
             const sessionsArray = querySnapshot.docs.map(doc => doc.data());
@@ -86,7 +90,8 @@ export function DailyReportModal({ onClose, isVisible, allTasks, date, categorie
         const qOffTaskSessions = query(
             collection(db, "offTaskSessions"),
             where("userId", "==", viewingUserId),
-            where("completionDate", "==", formattedDate)
+            where("completionTimestamp", ">=", startOfDay),
+            where("completionTimestamp", "<=", endOfDay)
         );
         const unsubscribeOffTaskSessions = onSnapshot(qOffTaskSessions, (querySnapshot) => {
             const offTaskArray = querySnapshot.docs.map(doc => doc.data());
@@ -232,7 +237,7 @@ export function DailyReportModal({ onClose, isVisible, allTasks, date, categorie
                             </table>
                         </div>
                     </div>
-                    {/* NOVO: Linha para o tempo total de "Fuga" */}
+                    {/* Linha para o tempo total de "Fuga" */}
                     <div className="bg-gray-100 p-4 rounded-md">
                         <h4 className="font-bold text-gray-700">Tempo Fora de Foco do Dia: <span className="font-normal">{getTotalOffTaskTime()}</span></h4>
                     </div>

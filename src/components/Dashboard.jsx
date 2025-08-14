@@ -11,6 +11,7 @@ import { EditUserModal } from './EditUserModal';
 import { EditTaskModal } from './EditTaskModal';
 import { TaskTimerModal } from './TaskTimerModal';
 import { collection, query, onSnapshot, orderBy, doc, updateDoc, getDoc, where, writeBatch, setDoc, deleteDoc, serverTimestamp, addDoc } from 'firebase/firestore';
+import { getLocalDayBounds, formatDate } from '../utils/dateUtils'; // CORREÇÃO: Importar a nova função de utilidade
 
 export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUserId, viewingUserName }) {
   const [showTaskModal, setShowTaskModal] = useState(false);
@@ -112,17 +113,19 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
 
   useEffect(() => {
     const completionsQueryUserId = viewingUserId || auth.currentUser?.uid;
-    const formattedDateForFetch = currentDate.toISOString().slice(0, 10);
-    
     if (!completionsQueryUserId) {
       setDailyCompletions({});
       return;
     }
 
+    // CORREÇÃO: Usar a nova abordagem de limites de data e consulta por Timestamp
+    const { startOfDay, endOfDay } = getLocalDayBounds(currentDate);
+
     const qCompletions = query(
       collection(db, "dailyCompletions"), 
-      where("userId", "==", completionsQueryUserId), 
-      where("completionDate", "==", formattedDateForFetch)
+      where("userId", "==", completionsQueryUserId),
+      where("completionTimestamp", ">=", startOfDay),
+      where("completionTimestamp", "<=", endOfDay)
     );
     
     const unsubscribeCompletions = onSnapshot(qCompletions, (querySnapshot) => {
@@ -207,7 +210,7 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
 
   const handleToggleOffTask = async () => {
     const sessionsRef = collection(db, "offTaskSessions");
-    const formattedDate = currentDate.toISOString().slice(0, 10);
+    const formattedDate = formatDate(currentDate);
     const userId = viewingUserId || auth.currentUser.uid;
   
     if (isOffTask) {
@@ -240,7 +243,7 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
 
   const handleToggleTaskCompletion = async (taskId) => {
     const isCompleted = !!dailyCompletions[taskId];
-    const formattedDate = currentDate.toISOString().slice(0, 10);
+    const formattedDate = formatDate(currentDate);
     const docId = `${taskId}-${formattedDate}`;
     const docRef = doc(db, "dailyCompletions", docId);
   
@@ -254,7 +257,7 @@ export function Dashboard({ onSwitchToMasterMode, userRole, onLogout, viewingUse
           taskId: taskId,
           userId: viewingUserId || auth.currentUser.uid,
           completionDate: formattedDate,
-          completionTimestamp: serverTimestamp(),
+          completionTimestamp: serverTimestamp(), // CORREÇÃO: Voltando para serverTimestamp
           totalDuration: totalDuration,
         });
       }
