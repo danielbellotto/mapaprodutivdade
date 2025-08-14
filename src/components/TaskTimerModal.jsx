@@ -4,29 +4,34 @@ import { db, auth } from '../utils/firebase';
 import { collection, addDoc, doc, deleteDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 
 export function TaskTimerModal({ onClose, isVisible, task, viewingUserId, currentDate }) {
-  const [timerStatus, setTimerStatus] = useState('stopped');
+  const [timerStatus, setTimerStatus] = useState('stopped'); // 'stopped', 'running', 'paused'
   const [sessionStartTime, setSessionStartTime] = useState(null);
+  const [elapsedTimeAtPause, setElapsedTimeAtPause] = useState(0); // NOVO: Tempo decorrido até a pausa
   const [totalSeconds, setTotalSeconds] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     let interval;
     if (timerStatus === 'running') {
+      const startRunningTime = new Date().getTime(); // Momento em que o timer começou a rodar
       interval = setInterval(() => {
-        setTotalSeconds(prevSeconds => prevSeconds + 1);
-      }, 1000);
+        // Atualiza o tempo com base no relógio do sistema, não no intervalo fixo
+        const newElapsedTime = Math.floor((new Date().getTime() - startRunningTime) / 1000) + elapsedTimeAtPause;
+        setTotalSeconds(newElapsedTime);
+      }, 250); // Atualiza a cada 250ms para uma contagem mais fluida na tela
     }
     return () => clearInterval(interval);
-  }, [timerStatus]);
+  }, [timerStatus, elapsedTimeAtPause]);
 
   const handleStart = () => {
-    if (timerStatus === 'stopped') {
-      setSessionStartTime(serverTimestamp());
+    if (timerStatus === 'stopped' || timerStatus === 'paused') {
+      setSessionStartTime(new Date()); // Usa o relógio do sistema para o início da sessão
+      setTimerStatus('running');
     }
-    setTimerStatus('running');
   };
 
   const handlePause = () => {
+    setElapsedTimeAtPause(totalSeconds); // Salva o tempo decorrido no momento da pausa
     setTimerStatus('paused');
   };
 
@@ -43,8 +48,8 @@ export function TaskTimerModal({ onClose, isVisible, task, viewingUserId, curren
           taskId: task.id,
           taskName: task.taskName,
           duration: totalSeconds,
-          startTime: sessionStartTime,
-          endTime: serverTimestamp(),
+          startTime: sessionStartTime, // Usando a data do cliente para registro
+          endTime: new Date(),
           status: 'finalized',
           completionDate: formattedDate,
         });
