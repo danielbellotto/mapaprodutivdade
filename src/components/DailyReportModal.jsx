@@ -44,7 +44,7 @@ export function DailyReportModal({ onClose, isVisible, allTasks, date, categorie
     useEffect(() => {
         if (!date || !isVisible || !viewingUserId) return;
 
-        // CORREÇÃO: Usa a data correta para a busca, que é uma string
+        // CORREÇÃO: Usar a nova abordagem de limites de data
         const formattedDate = [
             date.getFullYear(),
             (date.getMonth() + 1).toString().padStart(2, '0'),
@@ -55,7 +55,7 @@ export function DailyReportModal({ onClose, isVisible, allTasks, date, categorie
             const currentDayOfWeek = date.getDay();
             
             if (task.isDaily) {
-                return currentDayOfWeek >= 1 && currentDayOfWeek <= 5;
+                return true;
             } else {
                 return task.selectedDays?.includes(currentDayOfWeek);
             }
@@ -81,7 +81,6 @@ export function DailyReportModal({ onClose, isVisible, allTasks, date, categorie
         const qSessions = query(
             collection(db, "taskSessions"),
             where("userId", "==", viewingUserId),
-            // CORREÇÃO: Usa 'completionDate' para a busca
             where("completionDate", "==", formattedDate)
         );
         const unsubscribeSessions = onSnapshot(qSessions, (querySnapshot) => {
@@ -92,7 +91,6 @@ export function DailyReportModal({ onClose, isVisible, allTasks, date, categorie
         const qOffTaskSessions = query(
             collection(db, "offTaskSessions"),
             where("userId", "==", viewingUserId),
-            // CORREÇÃO: Usa 'completionDate' para a busca
             where("completionDate", "==", formattedDate)
         );
         const unsubscribeOffTaskSessions = onSnapshot(qOffTaskSessions, (querySnapshot) => {

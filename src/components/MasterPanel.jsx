@@ -1,17 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../utils/firebase';
-import { collection, query, onSnapshot, orderBy, getDoc, doc } from 'firebase/firestore';
+import { collection, query, onSnapshot, orderBy, getDoc, doc, where } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { EditUserModal } from './EditUserModal';
+import MasterReportDashboard from './MasterReportDashboard';
 
 export function MasterPanel({ onSwitchToNormalMode, onLogout, onViewCollaboratorDashboard }) {
   const [users, setUsers] = useState([]);
   const [allTasks, setAllTasks] = useState([]);
+  const [allCompletions, setAllCompletions] = useState({});
   const [loading, setLoading] = useState(true);
   const [expandedUserId, setExpandedUserId] = useState(null);
   const [showEditUserModal, setShowEditUserModal] = useState(false);
   const [userToEdit, setUserToEdit] = useState(null);
-  const [currentUserRole, setCurrentUserRole] = useState(null); // NOVO: Estado para a função do usuário logado
+  const [currentUserRole, setCurrentUserRole] = useState(null);
 
   useEffect(() => {
     const fetchCurrentUserRole = async () => {
@@ -47,41 +49,56 @@ export function MasterPanel({ onSwitchToNormalMode, onLogout, onViewCollaborator
       setLoading(false);
     });
 
-    fetchCurrentUserRole(); // NOVO: Busca a função do usuário logado
+    const qCompletions = query(collection(db, "dailyCompletions"));
+    const unsubscribeCompletions = onSnapshot(qCompletions, (querySnapshot) => {
+        const completionsMap = {};
+        querySnapshot.docs.forEach(doc => {
+            const data = doc.data();
+            if (!completionsMap[data.userId]) {
+                completionsMap[data.userId] = {};
+            }
+            if (!completionsMap[data.userId][data.completionDate]) {
+              completionsMap[data.userId][data.completionDate] = [];
+            }
+            completionsMap[data.userId][data.completionDate].push(data.taskId);
+        });
+        setAllCompletions(completionsMap);
+    });
+
+
+    fetchCurrentUserRole();
 
     return () => {
       unsubscribeUsers();
       unsubscribeTasks();
+      unsubscribeCompletions();
     };
   }, []);
 
-  const calculateProductivity = (userTasks, date) => {
+  const calculateProductivity = (userTasks, completions, date) => {
     const today = date;
     const currentDayOfWeek = today.getDay();
+    const formattedDate = today.toISOString().slice(0, 10);
     
     const dailyTasks = userTasks.filter(task => {
+        if (task.isArchived) return false;
         if (task.isDaily) {
           return currentDayOfWeek >= 1 && currentDayOfWeek <= 5;
         } else {
-          const taskDate = task.createdAt?.toDate();
-          const isCreatedOnCurrentDate = taskDate &&
-                                         taskDate.getDate() === today.getDate() &&
-                                         taskDate.getMonth() === today.getMonth() &&
-                                         taskDate.getFullYear() === today.getFullYear();
-          const isRecurringOnSelectedDay = task.selectedDays?.includes(currentDayOfWeek);
-          return isCreatedOnCurrentDate || isRecurringOnSelectedDay;
+          return task.selectedDays?.includes(currentDayOfWeek);
         }
     });
 
-    const completedDailyTasks = dailyTasks.filter(t => t.completed);
+    const completedDailyTasks = (completions[formattedDate] || []).filter(taskId =>
+        dailyTasks.some(task => task.id === taskId)
+    );
     const dailyProgress = dailyTasks.length > 0 ? (completedDailyTasks.length / dailyTasks.length) * 100 : 0;
     
     const firstDayOfWeek = new Date(today.getFullYear(), today.getMonth(), today.getDate() - today.getDay());
     const lastDayOfWeek = new Date(today.getFullYear(), today.getMonth(), today.getDate() - today.getDay() + 6);
-    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-
+    
     const weeklyTasks = userTasks.filter(task => {
+        if (task.isArchived) return false;
         const taskDate = task.createdAt?.toDate();
         if (!taskDate) return false;
         const isCreatedThisWeek = taskDate >= firstDayOfWeek && taskDate <= lastDayOfWeek;
@@ -93,14 +110,40 @@ export function MasterPanel({ onSwitchToNormalMode, onLogout, onViewCollaborator
         return isCreatedThisWeek || isRecurringThisWeek;
     });
 
+    const completedWeeklyTasks = weeklyTasks.filter(task => {
+        for (let d = new Date(firstDayOfWeek); d <= lastDayOfWeek; d.setDate(d.getDate() + 1)) {
+            const formattedDay = d.toISOString().slice(0, 10);
+            if ((completions[formattedDay] || []).includes(task.id)) {
+                return true;
+            }
+        }
+        return false;
+    });
+    
+    const weeklyProgress = weeklyTasks.length > 0 ? (completedWeeklyTasks.length / weeklyTasks.length) * 100 : 0;
+
+    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+
     const monthlyTasks = userTasks.filter(task => {
+        if (task.isArchived) return false;
         const taskDate = task.createdAt?.toDate();
         if (!taskDate) return false;
         return taskDate >= firstDayOfMonth && taskDate <= lastDayOfMonth;
     });
     
-    const weeklyProgress = weeklyTasks.length > 0 ? (weeklyTasks.filter(t => t.completed).length / weeklyTasks.length) * 100 : 0;
-    const monthlyProgress = monthlyTasks.length > 0 ? (monthlyTasks.filter(t => t.completed).length / monthlyTasks.length) * 100 : 0;
+    const completedMonthlyTasks = monthlyTasks.filter(task => {
+        for (let d = new Date(firstDayOfMonth); d <= lastDayOfMonth; d.setDate(d.getDate() + 1)) {
+            const formattedDay = d.toISOString().slice(0, 10);
+            if ((completions[formattedDay] || []).includes(task.id)) {
+                return true;
+            }
+        }
+        return false;
+    });
+    
+    const monthlyProgress = monthlyTasks.length > 0 ? (completedMonthlyTasks.length / monthlyTasks.length) * 100 : 0;
+
 
     return {
         daily: dailyProgress.toFixed(0),
@@ -174,12 +217,12 @@ export function MasterPanel({ onSwitchToNormalMode, onLogout, onViewCollaborator
                   <tbody className="bg-white divide-y divide-gray-200">
                     {users.map(user => {
                       const userTasks = allTasks.filter(task => task.userId === user.id);
-                      const productivity = calculateProductivity(userTasks, new Date());
+                      const productivity = calculateProductivity(userTasks, allCompletions[user.id] || {}, new Date());
                       const isExpanded = expandedUserId === user.id;
 
-                      const completedTasks = productivity.dailyTasks.filter(t => t.completed);
-                      const pendingTasks = productivity.dailyTasks.filter(t => !t.completed);
-                      
+                      const completedTasks = productivity.dailyTasks.filter(t => (allCompletions[user.id] && allCompletions[user.id][new Date().toISOString().slice(0, 10)] || []).includes(t.id));
+                      const pendingTasks = productivity.dailyTasks.filter(t => !(allCompletions[user.id] && allCompletions[user.id][new Date().toISOString().slice(0, 10)] || []).includes(t.id));
+
                       return (
                         <React.Fragment key={user.id}>
                           <tr className="hover:bg-gray-50">
@@ -193,7 +236,6 @@ export function MasterPanel({ onSwitchToNormalMode, onLogout, onViewCollaborator
                               {productivity.daily}% | {productivity.weekly}% | {productivity.monthly}%
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                              {/* NOVO BOTÃO: Editar Dados */}
                               <button
                                 onClick={() => handleOpenEditUserModal(user)}
                                 className="text-gray-600 hover:text-gray-900 font-semibold"
@@ -269,7 +311,7 @@ export function MasterPanel({ onSwitchToNormalMode, onLogout, onViewCollaborator
           isVisible={showEditUserModal}
           onClose={handleCloseEditUserModal}
           viewingUserId={userToEdit.id}
-          userRole={currentUserRole} // NOVO: Passa a função do usuário logado
+          userRole={currentUserRole}
         />
       )}
     </div>
