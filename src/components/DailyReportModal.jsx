@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../utils/firebase';
 import { collection, query, onSnapshot, where } from 'firebase/firestore';
 import { ModalWrapper } from './ModalWrapper';
-import { getLocalDayBounds } from '../utils/dateUtils'; // CORREÇÃO: Importa a nova função
 
 export function DailyReportModal({ onClose, isVisible, allTasks, date, categories, viewingUserId }) {
     const [tasksForDate, setTasksForDate] = useState([]);
@@ -45,8 +44,12 @@ export function DailyReportModal({ onClose, isVisible, allTasks, date, categorie
     useEffect(() => {
         if (!date || !isVisible || !viewingUserId) return;
 
-        // CORREÇÃO: Usar a nova abordagem de limites de data
-        const { startOfDay, endOfDay } = getLocalDayBounds(date);
+        // CORREÇÃO: Usa a data correta para a busca, que é uma string
+        const formattedDate = [
+            date.getFullYear(),
+            (date.getMonth() + 1).toString().padStart(2, '0'),
+            date.getDate().toString().padStart(2, '0')
+        ].join('-');
 
         const tasksOnDate = allTasks.filter(task => {
             const currentDayOfWeek = date.getDay();
@@ -63,8 +66,7 @@ export function DailyReportModal({ onClose, isVisible, allTasks, date, categorie
         const qCompletions = query(
             collection(db, "dailyCompletions"), 
             where("userId", "==", viewingUserId),
-            where("completionTimestamp", ">=", startOfDay),
-            where("completionTimestamp", "<=", endOfDay)
+            where("completionDate", "==", formattedDate)
         );
         
         const unsubscribeCompletions = onSnapshot(qCompletions, (querySnapshot) => {
@@ -79,8 +81,8 @@ export function DailyReportModal({ onClose, isVisible, allTasks, date, categorie
         const qSessions = query(
             collection(db, "taskSessions"),
             where("userId", "==", viewingUserId),
-            where("completionTimestamp", ">=", startOfDay),
-            where("completionTimestamp", "<=", endOfDay)
+            // CORREÇÃO: Usa 'completionDate' para a busca
+            where("completionDate", "==", formattedDate)
         );
         const unsubscribeSessions = onSnapshot(qSessions, (querySnapshot) => {
             const sessionsArray = querySnapshot.docs.map(doc => doc.data());
@@ -90,8 +92,8 @@ export function DailyReportModal({ onClose, isVisible, allTasks, date, categorie
         const qOffTaskSessions = query(
             collection(db, "offTaskSessions"),
             where("userId", "==", viewingUserId),
-            where("completionTimestamp", ">=", startOfDay),
-            where("completionTimestamp", "<=", endOfDay)
+            // CORREÇÃO: Usa 'completionDate' para a busca
+            where("completionDate", "==", formattedDate)
         );
         const unsubscribeOffTaskSessions = onSnapshot(qOffTaskSessions, (querySnapshot) => {
             const offTaskArray = querySnapshot.docs.map(doc => doc.data());

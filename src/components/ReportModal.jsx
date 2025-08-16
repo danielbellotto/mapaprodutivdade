@@ -13,6 +13,14 @@ export function ReportModal({ onClose, isVisible, allTasks, userData, onOpenDail
 
     const userId = viewingUserId || auth.currentUser?.uid;
 
+    const months = [
+        "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+        "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+    ];
+
+    const currentYear = new Date().getFullYear();
+    const years = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
+
     useEffect(() => {
         if (!isVisible || !userId) {
             return;
@@ -21,7 +29,7 @@ export function ReportModal({ onClose, isVisible, allTasks, userData, onOpenDail
         setLoading(true);
 
         const firstDayOfMonth = new Date(year, month, 1);
-        const lastDayOfMonth = new Date(year, month + 1, 0);
+        const lastDayOfMonth = new Date(year, month + 1, 0, 23, 59, 59, 999);
 
         const qCompletions = query(
             collection(db, "dailyCompletions"),
@@ -50,13 +58,11 @@ export function ReportModal({ onClose, isVisible, allTasks, userData, onOpenDail
 
             const updatedReportData = {};
             for (let d = new Date(firstDayOfMonth); d <= lastDayOfMonth; d.setDate(d.getDate() + 1)) {
-                // CORREÇÃO: Removendo o filtro que pulava os finais de semana
                 const dayKey = d.toISOString().slice(0, 10);
                 const dayOfWeek = d.getDay();
                 
                 const tasksForDay = allTasks.filter(task => {
                     if (task.isArchived) return false;
-                    // CORREÇÃO: Alterando a lógica para incluir finais de semana nas tarefas diárias
                     if (task.isDaily) {
                         return true; 
                     } else {
@@ -102,14 +108,6 @@ export function ReportModal({ onClose, isVisible, allTasks, userData, onOpenDail
     const handleYearChange = (e) => {
         setYear(parseInt(e.target.value));
     };
-
-    const months = [
-        "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-        "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
-    ];
-
-    const currentYear = new Date().getFullYear();
-    const years = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
 
     const allMonthlyTasks = Object.values(monthlyReportData);
     const totalTasks = allMonthlyTasks.reduce((acc, day) => acc + day.total, 0);
