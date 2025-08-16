@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db, auth } from '../utils/firebase';
 import { collection, query, onSnapshot, where } from 'firebase/firestore';
 import { ModalWrapper } from './ModalWrapper';
-import { getLocalDayBounds } from '../utils/dateUtils'; // CORREÇÃO: Importa a nova função
+import { getLocalDayBounds } from '../utils/dateUtils';
 
 export function ReportModal({ onClose, isVisible, allTasks, userData, onOpenDailyReport, viewingUserId, size = "md" }) {
     const [month, setMonth] = useState(new Date().getMonth());
@@ -50,17 +50,15 @@ export function ReportModal({ onClose, isVisible, allTasks, userData, onOpenDail
 
             const updatedReportData = {};
             for (let d = new Date(firstDayOfMonth); d <= lastDayOfMonth; d.setDate(d.getDate() + 1)) {
-                if (d.getDay() === 0 || d.getDay() === 6) {
-                    continue;
-                }
-
+                // CORREÇÃO: Removendo o filtro que pulava os finais de semana
                 const dayKey = d.toISOString().slice(0, 10);
                 const dayOfWeek = d.getDay();
                 
                 const tasksForDay = allTasks.filter(task => {
                     if (task.isArchived) return false;
+                    // CORREÇÃO: Alterando a lógica para incluir finais de semana nas tarefas diárias
                     if (task.isDaily) {
-                        return dayOfWeek >= 1 && dayOfWeek <= 5;
+                        return true; 
                     } else {
                         return task.selectedDays?.includes(dayOfWeek);
                     }
