@@ -2,10 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { ModalWrapper } from './ModalWrapper';
 import { db, auth } from '../utils/firebase';
 import { collection, addDoc, doc, deleteDoc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { formatDate } from '../utils/dateUtils';
 
 export function TaskTimerModal({ onClose, isVisible, task, viewingUserId, currentDate }) {
-  const [timerStatus, setTimerStatus] = useState('stopped'); // 'stopped', 'running', 'paused'
+  const [timerStatus, setTimerStatus] = useState('stopped');
   const [sessionStartTime, setSessionStartTime] = useState(null);
   const [elapsedTimeAtPause, setElapsedTimeAtPause] = useState(0);
   const [totalSeconds, setTotalSeconds] = useState(0);
@@ -14,12 +13,11 @@ export function TaskTimerModal({ onClose, isVisible, task, viewingUserId, curren
   useEffect(() => {
     let interval;
     if (timerStatus === 'running') {
-      const startOfInterval = Date.now();
+      const startRunningTime = new Date().getTime();
       interval = setInterval(() => {
-        const now = Date.now();
-        const elapsed = Math.floor((now - startOfInterval) / 1000) + elapsedTimeAtPause;
-        setTotalSeconds(elapsed);
-      }, 1000);
+        const newElapsedTime = Math.floor((new Date().getTime() - startRunningTime) / 1000) + elapsedTimeAtPause;
+        setTotalSeconds(newElapsedTime);
+      }, 250);
     }
     return () => clearInterval(interval);
   }, [timerStatus, elapsedTimeAtPause]);
@@ -39,7 +37,7 @@ export function TaskTimerModal({ onClose, isVisible, task, viewingUserId, curren
   const handleFinalize = async () => {
     setIsSaving(true);
     setTimerStatus('stopped');
-    const formattedDate = formatDate(currentDate);
+    const formattedDate = currentDate.toISOString().slice(0, 10);
     const taskSessionsRef = collection(db, "taskSessions");
     
     try {
@@ -74,7 +72,12 @@ export function TaskTimerModal({ onClose, isVisible, task, viewingUserId, curren
   };
 
   return (
-    <ModalWrapper onClose={onClose} isVisible={isVisible} title={`Cronômetro: ${task?.taskName || 'Tarefa'}`}>
+    <ModalWrapper 
+      onClose={onClose} 
+      onSave={handleFinalize} // NOVO: Passa a função de salvar para o modal
+      isVisible={isVisible} 
+      title={`Cronômetro: ${task?.taskName || 'Tarefa'}`}
+    >
       <div className="flex flex-col items-center justify-center p-4">
         <div className="text-5xl font-bold text-gray-800 my-8">
           {formatTime(totalSeconds)}
